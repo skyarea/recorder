@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -32,6 +34,37 @@ CREATE TABLE IF NOT EXISTS settings (
 	value TEXT NOT NULL
 );`
 
+const schemaNotes = `
+CREATE TABLE IF NOT EXISTS notes (
+	id TEXT PRIMARY KEY,
+	file_path TEXT NOT NULL,
+	text TEXT NOT NULL,
+	page INTEGER,
+	ts TEXT NOT NULL
+);`
+
+const schemaAnnotations = `
+CREATE TABLE IF NOT EXISTS annotations (
+	id TEXT PRIMARY KEY,
+	file_path TEXT NOT NULL,
+	page INTEGER NOT NULL,
+	kind TEXT NOT NULL,
+	data TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);`
+
+// schemaNoteAnnotations is the M:N join: composite primary key so the
+// same (note, annotation) pair can be linked only once. Deletion of a
+// parent cascades its rows away in DeleteNote/DeleteAnnotation (one
+// transaction, in code — SQLite enforces no foreign keys here because
+// the driver runs without PRAGMA foreign_keys).
+const schemaNoteAnnotations = `
+CREATE TABLE IF NOT EXISTS note_annotations (
+	note_id TEXT NOT NULL,
+	annotation_id TEXT NOT NULL,
+	PRIMARY KEY (note_id, annotation_id)
+);`
+
 // dsnParams tunes every connection opened by the pool:
 //   - busy_timeout(5000): a contended write waits up to 5s instead of
 //     failing immediately with "database is locked" (modernc.org/sqlite
@@ -56,7 +89,7 @@ func Open(dbPath string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, stmt := range []string{schemaFiles, schemaSettings} {
+	for _, stmt := range []string{schemaFiles, schemaSettings, schemaNotes, schemaAnnotations, schemaNoteAnnotations} {
 		if _, err := db.Exec(stmt); err != nil {
 			_ = db.Close()
 			return nil, err
@@ -235,4 +268,242 @@ func (s *Store) Setting(k string) (string, bool, error) {
 		return "", false, err
 	}
 	return v, true, nil
+}
+
+// newID returns a short random hex id (8 bytes → 16 hex chars), generated
+// server-side by every Add* method. The Go code base has no prior id
+// scheme to reuse.
+func newID() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:]) // crypto/rand.Read never fails on Go ≥ 1.24
+	return hex.EncodeToString(b[:])
+}
+
+// pageArg renders a *int column value for the driver: nil becomes SQL NULL.
+func pageArg(p *int) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
+// AddNote inserts a note for filePath and returns the stored record with
+// its backend-generated id and RFC3339 ts. A nil page pins the note to no
+// page; the returned note's AnnIDs is empty (links come from ListNotes).
+func (s *Store) AddNote(filePath, text string, page *int) (Note, error) {
+	n := Note{ID: newID(), FilePath: filePath, Text: text, TS: now(), AnnIDs: []string{}}
+	if page != nil {
+		p := *page // copy: the returned Note must not alias the caller's variable
+		n.Page = &p
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO notes (id, file_path, text, page, ts)
+		VALUES (?, ?, ?, ?, ?)`,
+		n.ID, n.FilePath, n.Text, pageArg(page), n.TS)
+	if err != nil {
+		return Note{}, err
+	}
+	return n, nil
+}
+
+// UpdateNote replaces the text of the note with id. An unknown id is a
+// no-op (legacy reference behaviour: find-then-write never fails on a
+// missing note), matching this package's lenient missing-row idiom.
+func (s *Store) UpdateNote(id, text string) error {
+	_, err := s.db.Exec(`UPDATE notes SET text = ? WHERE id = ?`, text, id)
+	return err
+}
+
+// DeleteNote removes the note with id and, in the same transaction, every
+// note_annotations row pointing at it. An unknown id is a no-op.
+func (s *Store) DeleteNote(id string) error {
+	return s.cascadeDelete(
+		`DELETE FROM notes WHERE id = ?`,
+		`DELETE FROM note_annotations WHERE note_id = ?`, id)
+}
+
+// cascadeDelete removes the link rows named by linkQuery first and then
+// the parent row named by parentQuery, both in one transaction, so the
+// two statements commit atomically.
+func (s *Store) cascadeDelete(parentQuery, linkQuery, id string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }() // no-op after Commit
+
+	if _, err := tx.Exec(linkQuery, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(parentQuery, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// scanNotes drains and closes rows into notes, giving each an empty
+// (non-nil) AnnIDs slice ready to be filled by the caller.
+func scanNotes(rows *sql.Rows) ([]Note, error) {
+	defer func() { _ = rows.Close() }()
+
+	var out []Note
+	for rows.Next() {
+		var n Note
+		var page sql.NullInt64
+		if err := rows.Scan(&n.ID, &n.FilePath, &n.Text, &page, &n.TS); err != nil {
+			return nil, err
+		}
+		if page.Valid {
+			p := int(page.Int64)
+			n.Page = &p
+		}
+		n.AnnIDs = []string{}
+		out = append(out, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// loadAnnIDs returns noteID → linked annotation ids (in link creation
+// order) for every note of filePath, in one query.
+func (s *Store) loadAnnIDs(filePath string) (map[string][]string, error) {
+	rows, err := s.db.Query(`
+		SELECT na.note_id, na.annotation_id
+		  FROM note_annotations AS na
+		  JOIN notes AS n ON n.id = na.note_id
+		 WHERE n.file_path = ?
+		 ORDER BY na.rowid`, filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := map[string][]string{}
+	for rows.Next() {
+		var noteID, annID string
+		if err := rows.Scan(&noteID, &annID); err != nil {
+			return nil, err
+		}
+		out[noteID] = append(out[noteID], annID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ListNotes returns the notes of filePath ordered by ts ascending (ties
+// fall back to insertion order: RFC3339 has a 1s granularity, and the
+// legacy export kept same-second notes in insertion order), each with
+// AnnIDs populated from the link table.
+func (s *Store) ListNotes(filePath string) ([]Note, error) {
+	rows, err := s.db.Query(`
+		SELECT id, file_path, text, page, ts
+		  FROM notes WHERE file_path = ?
+		 ORDER BY ts, rowid`, filePath)
+	if err != nil {
+		return nil, err
+	}
+	// The note rows are fully drained and closed before loadAnnIDs opens
+	// its own query, so no connection is held across the two.
+	out, err := scanNotes(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	annIDs, err := s.loadAnnIDs(filePath)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if ids := annIDs[out[i].ID]; ids != nil {
+			out[i].AnnIDs = ids
+		}
+	}
+	return out, nil
+}
+
+// AddAnnotation inserts one highlight|line|box annotation for filePath
+// and returns the stored record with a backend-generated id and RFC3339
+// created_at. data (the normalised geometry JSON) is stored verbatim —
+// it is deliberately neither parsed nor validated here. A kind outside
+// highlight|line|box returns an error before anything is written.
+func (s *Store) AddAnnotation(filePath string, page int, kind, data string) (Annotation, error) {
+	if !validAnnKinds[kind] {
+		return Annotation{}, fmt.Errorf("storage: invalid annotation kind %q", kind)
+	}
+	a := Annotation{
+		ID:        newID(),
+		FilePath:  filePath,
+		Page:      page,
+		Kind:      kind,
+		Data:      data,
+		CreatedAt: now(),
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO annotations (id, file_path, page, kind, data, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		a.ID, a.FilePath, a.Page, a.Kind, a.Data, a.CreatedAt)
+	if err != nil {
+		return Annotation{}, err
+	}
+	return a, nil
+}
+
+// DeleteAnnotation removes the annotation with id and, in the same
+// transaction, every note_annotations row pointing at it. An unknown id
+// is a no-op. The note rows themselves are never touched.
+func (s *Store) DeleteAnnotation(id string) error {
+	return s.cascadeDelete(
+		`DELETE FROM annotations WHERE id = ?`,
+		`DELETE FROM note_annotations WHERE annotation_id = ?`, id)
+}
+
+// ListAnnotations returns every annotation of filePath, oldest first
+// (ties fall back to insertion order, as in ListNotes).
+func (s *Store) ListAnnotations(filePath string) ([]Annotation, error) {
+	rows, err := s.db.Query(`
+		SELECT id, file_path, page, kind, data, created_at
+		  FROM annotations WHERE file_path = ?
+		 ORDER BY created_at, rowid`, filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []Annotation
+	for rows.Next() {
+		var a Annotation
+		if err := rows.Scan(&a.ID, &a.FilePath, &a.Page, &a.Kind, &a.Data, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// LinkNote connects a note to an annotation. It is idempotent: linking
+// the same pair twice keeps the single row (composite primary key +
+// ON CONFLICT DO NOTHING) and returns no error.
+func (s *Store) LinkNote(noteID, annID string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO note_annotations (note_id, annotation_id) VALUES (?, ?)
+		ON CONFLICT(note_id, annotation_id) DO NOTHING`,
+		noteID, annID)
+	return err
+}
+
+// UnlinkNote disconnects a note from an annotation; a pair that is not
+// linked is a no-op.
+func (s *Store) UnlinkNote(noteID, annID string) error {
+	_, err := s.db.Exec(`
+		DELETE FROM note_annotations
+		 WHERE note_id = ? AND annotation_id = ?`,
+		noteID, annID)
+	return err
 }
