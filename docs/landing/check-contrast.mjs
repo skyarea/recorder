@@ -77,27 +77,56 @@ if (keySets[0] !== keySets[1]) {
   process.exit(1);
 }
 
+// 严格校验：必须是「数字 数字% 数字%」，否则后面算出来的都是假的。
+// 只查段数是不够的 —— 少了 % 的 `30 15 15` 用 parseFloat 照样能解析成颜色。
+const TRIPLET = /^(-?\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)%\s+(\d+(?:\.\d+)?)%$/;
+
 const toHex = t => {
-  const p = t.trim().split(/\s+/);
-  if (p.length !== 3) throw new Error(`不是裸 HSL 三元组: "${t}"`);
-  return hslToHex(parseFloat(p[0]), parseFloat(p[1]), parseFloat(p[2]));
+  const m = TRIPLET.exec(String(t).trim());
+  if (!m) throw new Error(`不是合法的裸 HSL 三元组（应为「色相 饱和度% 明度%」）: "${t}"`);
+  const [, h, s, l] = m;
+  if (Number(s) > 100 || Number(l) > 100) throw new Error(`饱和度/明度超出 0-100%: "${t}"`);
+  return hslToHex(parseFloat(h), parseFloat(s), parseFloat(l));
 };
 
 // ---------- 断言每处「文字 / 其所在表面」 ----------
-// 表面说明：band 用 card 底、quiet band 用 muted 底，两者都要覆盖，
-// 因为强调色和次要文字都可能落在其中任意一个上。
-const PAIRS = [
-  ["正文 / 页面底",            "--c-fg",       "--c-bg"],
-  ["正文 / 卡片底",            "--c-fg",       "--c-card"],
-  ["正文 / 次级区块底",        "--c-fg",       "--c-muted"],
-  ["次要文字 / 页面底",        "--c-fg-muted", "--c-bg"],
-  ["次要文字 / 卡片底",        "--c-fg-muted", "--c-card"],
-  ["次要文字 / 次级区块底",    "--c-fg-muted", "--c-muted"],
-  ["强调色文字 / 页面底",      "--c-accent",   "--c-bg"],
-  ["强调色文字 / 卡片底",      "--c-accent",   "--c-card"],
-  ["强调色文字 / 次级区块底",  "--c-accent",   "--c-muted"],
-  ["按钮标签 / 强调色底",      "--c-on-accent","--c-accent"],
+// 表面：page = --c-bg，band = --c-card，quiet band = --c-muted。
+// 任何可能承载文字的颜色都要在三种表面上各测一遍 —— 区块可以嵌套，
+// 强调色和次要文字都可能落进任意一个。
+//
+// 这里额外做一次「表面覆盖」校验：把 index.html 里实际用到的
+// background 令牌扫一遍，如果出现了本表未覆盖的表面就报错，
+// 免得将来有人加了新表面而检查脚本还在测旧的那套。
+const SURFACES = ["--c-bg", "--c-card", "--c-muted"];
+const TEXT_COLOURS = [
+  ["正文", "--c-fg"],
+  ["次要文字", "--c-fg-muted"],
+  ["强调色文字", "--c-accent"],
+  ["状态色文字", "--c-ok"],
 ];
+
+const SURFACE_LABEL = { "--c-bg": "页面底", "--c-card": "卡片底", "--c-muted": "次级区块底" };
+
+const PAIRS = [];
+for (const [tLabel, tKey] of TEXT_COLOURS)
+  for (const sKey of SURFACES)
+    PAIRS.push([`${tLabel} / ${SURFACE_LABEL[sKey]}`, tKey, sKey]);
+PAIRS.push(["按钮标签 / 强调色底", "--c-on-accent", "--c-accent"]);
+
+// 交叉校验：CSS 里实际用作 background 的 --c-* 令牌必须都在 SURFACES 内。
+// --c-accent 是主按钮的底色，属于「另一个表面」而非本表的三档表面，
+// 它由「按钮标签 / 强调色底」那一对单独覆盖，因此在这里显式豁免。
+const SURFACE_EXEMPT = ["--c-accent"];
+
+const usedSurfaceTokens = [...css.matchAll(/background:\s*hsl\(var\((--c-[a-z-]+)\)\)/g)]
+  .map(m => m[1]);
+const uncheckedSurfaces = [...new Set(usedSurfaceTokens)]
+  .filter(k => !SURFACES.includes(k) && !SURFACE_EXEMPT.includes(k));
+if (uncheckedSurfaces.length) {
+  console.error("index.html 使用了未纳入本检查的表面令牌（请把它们加入 SURFACES 并扩充配对）：");
+  for (const k of uncheckedSurfaces) console.error("  " + k);
+  process.exit(1);
+}
 
 const MODES = ["浅色", "深色"];
 let failures = 0;
