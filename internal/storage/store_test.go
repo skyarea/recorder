@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -235,5 +237,114 @@ func TestSettingsRoundTrip(t *testing.T) {
 	}
 	if v, ok, err = s.Setting("empty"); err != nil || !ok || v != "" {
 		t.Errorf("Setting(\"empty\") = (%q, %v, %v), want (\"\", true, nil)", v, ok, err)
+	}
+}
+
+// TestConcurrentProgressAndTotalPagesKeepInvariant hammers one Store from
+// several goroutines (the Wails reality: bound calls dispatch on separate
+// goroutines, e.g. a save goroutine racing a UI action) and asserts that
+// every observable state keeps page <= total_pages. Before the setters were
+// made transactional, a SetTotalPages landing between a SetProgress load and
+// its write persisted a row with page > total_pages.
+func TestConcurrentProgressAndTotalPagesKeepInvariant(t *testing.T) {
+	s := newTestStore(t)
+	const path = "C:/books/concurrent.pdf"
+
+	// Seed total >= 1: clamping only kicks in when TotalPages > 0, so a
+	// total of 0 would legally allow page > 0 and make the assertion
+	// vacuous. The SetTotalPages goroutine below never writes 0 either.
+	if err := s.SetTotalPages(path, 20); err != nil {
+		t.Fatalf("SetTotalPages(20): %v", err)
+	}
+
+	const (
+		writersPerKind = 2
+		iterations     = 100
+		maxValue       = 30 // values in [0, maxValue); totals stay >= 1
+	)
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var failures []string
+	fail := func(format string, args ...any) {
+		mu.Lock()
+		failures = append(failures, fmt.Sprintf(format, args...))
+		mu.Unlock()
+	}
+	start := make(chan struct{})
+
+	for g := 0; g < writersPerKind; g++ {
+		wg.Add(1)
+		go func(seed int) {
+			defer wg.Done()
+			<-start
+			for i := 0; i < iterations; i++ {
+				if err := s.SetProgress(path, (seed*iterations+i)%maxValue); err != nil {
+					fail("SetProgress: %v", err)
+					return
+				}
+			}
+		}(g)
+
+		wg.Add(1)
+		go func(seed int) {
+			defer wg.Done()
+			<-start
+			for i := 0; i < iterations; i++ {
+				if err := s.SetTotalPages(path, 1+(seed*iterations+i)%maxValue); err != nil {
+					fail("SetTotalPages: %v", err)
+					return
+				}
+			}
+		}(g)
+	}
+
+	// A reader checks the invariant on every committed state: each setter
+	// commits atomically, so any File() snapshot must already satisfy it.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < iterations; i++ {
+			rec, err := s.File(path)
+			if err != nil {
+				fail("File(): %v", err)
+				return
+			}
+			if rec.Page > rec.TotalPages {
+				fail("File() saw page=%d > total_pages=%d", rec.Page, rec.TotalPages)
+				return
+			}
+		}
+	}()
+
+	close(start)
+	wg.Wait()
+
+	for _, msg := range failures {
+		t.Error(msg)
+	}
+	if t.Failed() {
+		return
+	}
+
+	got, err := s.File(path)
+	if err != nil {
+		t.Fatalf("File(): %v", err)
+	}
+	if got.Page > got.TotalPages {
+		t.Errorf("final row page=%d > total_pages=%d, invariant broken", got.Page, got.TotalPages)
+	}
+	if got.Page < 0 || got.Page >= maxValue {
+		t.Errorf("final row page=%d, want in [0, %d)", got.Page, maxValue)
+	}
+	if got.TotalPages < 1 || got.TotalPages > maxValue {
+		t.Errorf("final row total_pages=%d, want in [1, %d]", got.TotalPages, maxValue)
+	}
+	if got.Status != "todo" {
+		t.Errorf("final row status=%q, want \"todo\"", got.Status)
+	}
+	if _, err := time.Parse(time.RFC3339, got.UpdatedAt); err != nil {
+		t.Errorf("final row UpdatedAt=%q, want RFC3339: %v", got.UpdatedAt, err)
 	}
 }

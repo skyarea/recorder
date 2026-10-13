@@ -32,6 +32,17 @@ CREATE TABLE IF NOT EXISTS settings (
 	value TEXT NOT NULL
 );`
 
+// dsnParams tunes every connection opened by the pool:
+//   - busy_timeout(5000): a contended write waits up to 5s instead of
+//     failing immediately with "database is locked" (modernc.org/sqlite
+//     applies no busy timeout unless the DSN asks for one).
+//   - _txlock=immediate: db.Begin() issues BEGIN IMMEDIATE, taking the
+//     write lock up front. That (a) makes the read-modify-write inside
+//     each setter a single atomic step and (b) guarantees SQLite invokes
+//     the busy handler on contention rather than returning SQLITE_BUSY
+//     without waiting (a deferred transaction deadlocks when upgrading).
+const dsnParams = "?_pragma=busy_timeout(5000)&_txlock=immediate"
+
 // Open opens (creating if needed) the SQLite database at dbPath and
 // creates the tables idempotently. Production callers pass
 // %APPDATA%/recorder/recorder.db.
@@ -41,7 +52,7 @@ func Open(dbPath string) (*Store, error) {
 			return nil, fmt.Errorf("storage: create db dir: %w", err)
 		}
 	}
-	db, err := sql.Open("sqlite", "file:"+dbPath)
+	db, err := sql.Open("sqlite", "file:"+dbPath+dsnParams)
 	if err != nil {
 		return nil, err
 	}
@@ -64,10 +75,16 @@ func now() string {
 	return time.Now().Format(time.RFC3339)
 }
 
+// rowQuerier is the subset of *sql.DB and *sql.Tx used to read one record.
+type rowQuerier interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
 // loadFile reads one record; a path with no record yields the todo default.
-func (s *Store) loadFile(path string) (FileRec, error) {
+// The caller passes either the Store's db or an open transaction.
+func loadFile(q rowQuerier, path string) (FileRec, error) {
 	var rec FileRec
-	err := s.db.QueryRow(
+	err := q.QueryRow(
 		`SELECT path, status, page, total_pages, starred, updated_at
 		   FROM files WHERE path = ?`, path,
 	).Scan(&rec.Path, &rec.Status, &rec.Page, &rec.TotalPages, &rec.Starred, &rec.UpdatedAt)
@@ -82,7 +99,7 @@ func (s *Store) loadFile(path string) (FileRec, error) {
 
 // File returns the record for path, or the todo default when none exists.
 func (s *Store) File(path string) (FileRec, error) {
-	return s.loadFile(path)
+	return loadFile(s.db, path)
 }
 
 // SetStatus stores status for path (creating the record if needed) and
@@ -112,32 +129,50 @@ func (s *Store) SetStar(path string, starred bool) error {
 
 // SetProgress stores the current page for path: negative pages clamp to 0
 // and, when the stored record has TotalPages > 0, page is capped at it.
+// The load and the write run in one transaction so a concurrent
+// SetTotalPages cannot slip between them and leave page > total_pages.
 func (s *Store) SetProgress(path string, page int) error {
 	if page < 0 {
 		page = 0
 	}
-	rec, err := s.loadFile(path)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }() // no-op after Commit
+
+	rec, err := loadFile(tx, path)
 	if err != nil {
 		return err
 	}
 	if rec.TotalPages > 0 && page > rec.TotalPages {
 		page = rec.TotalPages
 	}
-	_, err = s.db.Exec(`
+	if _, err := tx.Exec(`
 		INSERT INTO files (path, status, page, total_pages, starred, updated_at)
 		VALUES (?, 'todo', ?, 0, 0, ?)
 		ON CONFLICT(path) DO UPDATE SET page = excluded.page, updated_at = excluded.updated_at`,
-		path, page, now())
-	return err
+		path, page, now()); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SetTotalPages stores the page count for path: negative totals clamp to 0,
 // and a stored Page above the new total is linked down to it.
+// The load and the write run in one transaction for the same reason as
+// SetProgress.
 func (s *Store) SetTotalPages(path string, total int) error {
 	if total < 0 {
 		total = 0
 	}
-	rec, err := s.loadFile(path)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }() // no-op after Commit
+
+	rec, err := loadFile(tx, path)
 	if err != nil {
 		return err
 	}
@@ -145,13 +180,15 @@ func (s *Store) SetTotalPages(path string, total int) error {
 	if page > total {
 		page = total
 	}
-	_, err = s.db.Exec(`
+	if _, err := tx.Exec(`
 		INSERT INTO files (path, status, page, total_pages, starred, updated_at)
 		VALUES (?, 'todo', ?, ?, 0, ?)
 		ON CONFLICT(path) DO UPDATE SET total_pages = excluded.total_pages,
 			page = excluded.page, updated_at = excluded.updated_at`,
-		path, page, total, now())
-	return err
+		path, page, total, now()); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ListFiles returns every stored record, ordered by path.
