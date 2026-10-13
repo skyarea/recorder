@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>recorder — PDF 阅读进度与笔记</title>
 <meta name="description" content="本地优先的 Windows PDF 阅读器：阅读进度、笔记与标注，数据存在自己电脑上。">
+<meta name="color-scheme" content="light dark">
 <style>
 /* ==========================================================================
    设计令牌 —— 落地页的唯一颜色与排版来源
@@ -12,57 +13,70 @@
    规则：本文件下方不再出现硬编码颜色值 / 字号 / 间距，一律引用这里的变量。
 
    命名约定：
-     --c-*   颜色 (color)
-     --fs-*  字号 (font-size)
-     --fw-*  字重 (font-weight)
-     --lh-*  行高 (line-height)
-     --sp-*  间距 (space)，数字为倍数梯度，非像素值
-     --r-*   圆角 (radius)
-     --sh-*  阴影 (shadow)
+     --c-*        颜色 (color)，含义见下
+     --fs-*       字号 (font-size)
+     --fw-*       字重 (font-weight)
+     --lh-*       行高 (line-height)
+     --sp-*       间距 (space)，数字为梯度序号，非像素值
+     --container  版心最大宽度
+     --r-*        圆角 (radius)
+     --sh-*       阴影 (shadow)
+
+   颜色用「裸 HSL 三元组」而非十六进制，配合 hsl(var(--x) / <alpha>) 使用。
+   这样深浅两套只需各覆盖一遍同一组键，且透明度叠加不必另立变量。
+
+   色相取自 ccswitch.io 的暖色中性体系（表面 35–40°、强调 15°），
+   但明度按本页要求重新定 —— 该参考的橙色只作装饰，我们的强调色要承担
+   按钮文字与链接文字，必须满足 4.5:1。取舍过程见 REFERENCE-ccswitch.md。
 
    范围仅限本落地页（docs/pages/）。应用内前端 frontend/ 的色板归 issue #8，
    刻意不共用、不引用 —— 两份色板并存是已知且被接受的决定。
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
-   调色板：深色（默认）。覆盖 --c-* 语义色。
+   调色板：浅色。暖砂底 + 暖近黑字，无一处中性灰。
    -------------------------------------------------------------------------- */
 :root{
-  /* 表面：页面底色 → 卡片，逐层变亮，形成层次。
-     目前只有两级；将来要加悬停态时，在此处插入第三个更亮的值，
-     而不是在样式里就地写死一个颜色。 */
-  --c-bg:#0f1115;
-  --c-panel:#161a21;
+  /* 表面：页面底色 → 卡片 → 次级区块（muted），三者色相同、明度递减。
+     区块背景在 background 与 muted 之间交替，形成横向节奏。 */
+  --c-bg:38 28% 91%;
+  --c-card:35 22% 85%;
+  --c-muted:35 20% 87%;
 
-  /* 描边与分隔线。细描边不作为「唯一可识别依据」（卡片另有底色与间距区分），
-     因此不适用 WCAG 1.4.11 的 3:1 要求；刻意保持克制，避免每张卡都像黑框。 */
-  --c-border:#262c36;
+  /* 描边。细描边不作为「唯一可识别依据」（卡片另有底色与间距区分），
+     因此不适用 WCAG 1.4.11 的 3:1 要求；刻意保持克制。 */
+  --c-border:35 18% 80%;
 
-  /* 文字：正文 → 次要（说明、页脚） */
-  --c-fg:#e8ecf1;
-  --c-muted:#98a2b3;
+  /* 文字：正文 → 次要（说明、页脚）。正文是暖近黑，不是纯黑。 */
+  --c-fg:30 15% 15%;
+  --c-fg-muted:30 14% 30%;
 
-  /* 品牌色。深色下 accent 用作链接色与按钮底色；
-     按钮上的文字用 on-accent（深色）而非白色，才能达到 4.5:1（白色仅 3.20）。 */
-  --c-accent:#4c8dff;
-  --c-on-accent:#0b1220;
+  /* 强调色：焦橙，全页唯一。用作链接文字与主按钮底色。
+     明度压到 38% 是为了让它在 bg/card/muted 三种表面上都达到 4.5:1。
+     按钮上的文字用 --c-on-accent（暖白），不是纯白。 */
+  --c-accent:15 65% 38%;
+  --c-on-accent:40 30% 96%;
 
-  /* 语义色。ok 目前落地页尚未使用，为 #17 起的状态提示（如「已是最新版本」）预留；
+  /* 语义色。本页尚未使用，为 #17 起的状态提示预留；
      若后续确认用不上，连同这条注释一并删除，不要留成无主的令牌。 */
-  --c-ok:#3fb950;
+  --c-ok:142 60% 30%;
 
   /* 排版标尺 */
   --fs-sm:.88rem;      /* 页脚、代码 */
   --fs-base:1rem;      /* 正文基准 */
   --fs-md:1.05rem;     /* 引言 */
-  --fs-lg:1.1rem;      /* 小标题 */
-  --fs-xl:2rem;        /* 主标题 */
+  --fs-lg:1.35rem;     /* 小节标题 */
+  --fs-xl:3.75rem;     /* 主标题（参考量级 60px） */
 
   --fw-normal:400;
+  --fw-medium:500;
   --fw-semibold:600;
 
-  --lh-tight:1.3;
-  --lh-base:1.65;
+  --lh-tight:1.05;     /* 大标题：接近 1.0 的紧行高 */
+  --lh-snug:1.35;      /* 小节标题 */
+  --lh-base:1.65;      /* 正文 */
+
+  --tracking-tight:-.025em;   /* 大标题收紧字距 */
 
   /* 间距梯度：单基数缩放，避免出现 13px / 14px / 15px 这类随手值 */
   --sp-1:4px;
@@ -76,32 +90,36 @@
   --sp-9:40px;
   --sp-10:56px;
   --sp-11:80px;
+  --sp-12:104px;
 
-  /* 圆角：小元件 → 卡片 */
-  --r-sm:5px;
-  --r-md:8px;
+  /* 版心 */
+  --container:1120px;
+
+  /* 圆角：小元件 → 卡片。参考使用 .75rem，这里对齐。 */
+  --r-sm:6px;
+  --r-md:10px;
   --r-lg:12px;
 
-  /* 阴影 */
-  --sh-1:0 1px 2px rgba(0,0,0,.3);
+  /* 阴影：暖色投影，避免冷灰阴影在暖底上显脏 */
+  --sh-1:0 1px 2px hsl(30 15% 15% / .06), 0 1px 3px hsl(30 15% 15% / .04);
 }
 
 /* --------------------------------------------------------------------------
-   调色板：浅色。覆盖同一组 --c-*，令牌名不变，用到的样式无需分叉。
-   浅色 accent 取 #1558c0 而非更亮的蓝：亮蓝在 #f7f8fa 上只有 4.36:1，
-   不满足正文 4.5:1；#1558c0 达 6.20:1，其上的白字达 6.59:1。
+   调色板：深色。暖褐底 + 暖白字；强调色提亮，按钮文字改用暖近黑。
+   覆盖同一组 --c-* 键，令牌名不变，用到的样式无需分叉。
    -------------------------------------------------------------------------- */
-@media (prefers-color-scheme: light){
+@media (prefers-color-scheme: dark){
   :root{
-    --c-bg:#f7f8fa;
-    --c-panel:#ffffff;
-    --c-border:#e3e6ea;
-    --c-fg:#1a1d21;
-    --c-muted:#5c6570;
-    --c-accent:#1558c0;
-    --c-on-accent:#ffffff;
-    --c-ok:#1a7f37;
-    --sh-1:0 1px 2px rgba(0,0,0,.06);
+    --c-bg:40 15% 12%;
+    --c-card:38 12% 18%;
+    --c-muted:38 10% 22%;
+    --c-border:38 10% 28%;
+    --c-fg:35 20% 88%;
+    --c-fg-muted:35 15% 66%;
+    --c-accent:15 65% 68%;
+    --c-on-accent:30 15% 15%;
+    --c-ok:142 60% 50%;
+    --sh-1:0 1px 2px hsl(0 0% 0% / .35), 0 1px 3px hsl(0 0% 0% / .25);
   }
 }
 
@@ -112,17 +130,18 @@
 
 body{
   margin:0;
-  background:var(--c-bg);
-  color:var(--c-fg);
-  font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  background:hsl(var(--c-bg));
+  color:hsl(var(--c-fg));
+  font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
   font-size:var(--fs-base);
   line-height:var(--lh-base);
+  -webkit-font-smoothing:antialiased;
 }
 
 main{
-  max-width:760px;
+  max-width:var(--container);
   margin:0 auto;
-  padding:var(--sp-10) var(--sp-7) var(--sp-11);
+  padding:var(--sp-11) var(--sp-7) var(--sp-12);
 }
 
 /* ==========================================================================
@@ -132,71 +151,91 @@ h1{
   font-size:var(--fs-xl);
   line-height:var(--lh-tight);
   font-weight:var(--fw-semibold);
-  margin:0 0 var(--sp-3);
-  letter-spacing:-.02em;
+  letter-spacing:var(--tracking-tight);
+  margin:0 0 var(--sp-4);
 }
 
 h2{
   font-size:var(--fs-lg);
-  line-height:var(--lh-tight);
+  line-height:var(--lh-snug);
   font-weight:var(--fw-semibold);
-  margin:0 0 var(--sp-4);
+  margin:0 0 var(--sp-6);
 }
 
 .lede{
-  color:var(--c-muted);
+  color:hsl(var(--c-fg-muted));
   font-size:var(--fs-md);
-  margin:0 0 var(--sp-8);
+  margin:0 0 var(--sp-9);
+  max-width:52ch;
+}
+
+/* 区块引导语：比正文更轻，用于分隔大段内容 */
+.eyebrow{
+  font-size:var(--fs-sm);
+  font-weight:var(--fw-medium);
+  color:hsl(var(--c-accent));
+  margin:0 0 var(--sp-3);
+}
+
+/* ==========================================================================
+   分区
+   --------------------------------------------------------------------------
+   区块背景在 background 与 muted 之间交替，给页面横向节奏。
+   .band 用负外边距撑满视口宽度，内容仍受 --container 约束。
+   ========================================================================== */
+.band{
+  background:hsl(var(--c-bg));
+  border:1px solid hsl(var(--c-border));
+  border-radius:var(--r-lg);
+  padding:var(--sp-9);
+  margin:0 0 var(--sp-6);
+}
+
+.band.quiet{
+  background:hsl(var(--c-muted));
+  border-color:transparent;
 }
 
 /* ==========================================================================
    元件
    ========================================================================== */
-.card{
-  background:var(--c-panel);
-  border:1px solid var(--c-border);
-  border-radius:var(--r-lg);
-  padding:var(--sp-7);
-  margin:0 0 var(--sp-6);
-  box-shadow:var(--sh-1);
-}
-
 .cta{
   display:flex;
   gap:var(--sp-4);
   flex-wrap:wrap;
   align-items:center;
-  margin-bottom:var(--sp-3);
+  margin-bottom:var(--sp-4);
 }
 
 a.btn{
   display:inline-block;
-  background:var(--c-accent);
-  color:var(--c-on-accent);
+  background:hsl(var(--c-accent));
+  color:hsl(var(--c-on-accent));
   text-decoration:none;
   font-weight:var(--fw-semibold);
-  padding:var(--sp-4) var(--sp-6);
+  padding:var(--sp-4) var(--sp-7);
   border-radius:var(--r-md);
 }
 
 a.btn.ghost{
   background:transparent;
-  color:var(--c-accent);
-  border:1px solid var(--c-border);
+  color:hsl(var(--c-accent));
+  border:1px solid hsl(var(--c-border));
 }
 
 .meta{
-  color:var(--c-muted);
+  color:hsl(var(--c-fg-muted));
   font-size:var(--fs-sm);
   margin:var(--sp-2) 0 0;
 }
 
 .note{
-  border-left:3px solid var(--c-accent);
+  border-left:3px solid hsl(var(--c-accent));
   padding-left:var(--sp-5);
-  margin:var(--sp-4) 0 0;
-  color:var(--c-muted);
+  margin:var(--sp-5) 0 0;
+  color:hsl(var(--c-fg-muted));
   font-size:var(--fs-sm);
+  max-width:70ch;
 }
 
 ul{
@@ -209,27 +248,35 @@ li{
 }
 
 code{
-  background:var(--c-bg);
-  border:1px solid var(--c-border);
+  background:hsl(var(--c-bg));
+  border:1px solid hsl(var(--c-border));
   border-radius:var(--r-sm);
   padding:2px var(--sp-2);
   font-size:var(--fs-sm);
 }
 
 footer{
-  color:var(--c-muted);
+  color:hsl(var(--c-fg-muted));
   font-size:var(--fs-sm);
   margin-top:var(--sp-8);
   text-align:center;
+}
+
+footer a{color:hsl(var(--c-accent))}
+
+@media (max-width:640px){
+  main{padding:var(--sp-9) var(--sp-6) var(--sp-10)}
+  .band{padding:var(--sp-7)}
 }
 </style>
 </head>
 <body>
 <main>
+  <p class="eyebrow">本地优先 · 单文件 exe</p>
   <h1>recorder</h1>
   <p class="lede">本地优先的 Windows PDF 阅读器 —— 阅读进度、笔记与标注，数据都存在你自己的电脑上。</p>
 
-  <div class="card">
+  <div class="band">
     <h2>下载</h2>
     <div class="cta">
       <a class="btn" id="dl" href="https://github.com/skyarea/recorder/releases/latest">下载最新版</a>
@@ -239,7 +286,7 @@ footer{
     <p class="note">单文件 exe，无需安装：下载后双击即可运行。首次启动会自动扫描你选定的 PDF 目录。</p>
   </div>
 
-  <div class="card">
+  <div class="band quiet">
     <h2>功能</h2>
     <ul>
       <li>目录树扫描 + 阅读状态 / 进度 / 星标</li>

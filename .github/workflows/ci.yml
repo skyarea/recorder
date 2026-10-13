@@ -47,3 +47,6 @@ jobs:
         env:
           CGO_ENABLED: "0"
         run: go test ./... -count=1
+
+      - name: landing page contrast
+        run: node docs/landing/check-contrast.mjs
