@@ -18,14 +18,28 @@ type FileMeta struct {
 // Scan recursively collects every *.pdf (case-insensitive) under root.
 // Paths are relative to root and always use '/' separators. Results are
 // de-duplicated (first wins) and sorted in natural (digit-aware) order.
-// A missing root is returned as a non-nil error; Scan never panics.
+// An unreadable root is returned as a non-nil error; unreadable entries
+// below the root are skipped. Scan never panics.
 func Scan(root string) ([]FileMeta, error) {
+	return scan(root, filepath.WalkDir)
+}
+
+type walkFn func(root string, fn fs.WalkDirFunc) error
+
+// scan runs the walk with an injectable walker so tests can simulate
+// unreadable sub-entries portably (Windows os.Chmod cannot deny directory
+// listing, and WalkDir never follows symlinks, so the real FS cannot
+// produce a sub-entry walk error on demand).
+func scan(root string, walk walkFn) ([]FileMeta, error) {
 	var out []FileMeta
 	seen := map[string]bool{}
 
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			if path == root {
+				return err // missing/unreadable root must surface (Review Focus #1)
+			}
+			return nil // skip unreadable sub-entries, matching the JS reference
 		}
 		if d.IsDir() {
 			return nil

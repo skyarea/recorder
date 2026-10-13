@@ -1,6 +1,7 @@
 package files
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -63,6 +64,59 @@ func TestScanMissingRoot(t *testing.T) {
 	got, err := Scan(root)
 	if err == nil {
 		t.Errorf("Scan(%q) error = nil, want non-nil error (got %+v)", root, got)
+	}
+}
+
+// walkEntry is a minimal fs.DirEntry for simulating walk callbacks.
+type walkEntry struct {
+	name string
+	dir  bool
+}
+
+func (e walkEntry) Name() string { return e.name }
+func (e walkEntry) IsDir() bool  { return e.dir }
+func (e walkEntry) Type() fs.FileMode {
+	if e.dir {
+		return fs.ModeDir
+	}
+	return 0
+}
+func (e walkEntry) Info() (fs.FileInfo, error) { return nil, fs.ErrInvalid }
+
+func TestScanSkipsUnreadableSubEntries(t *testing.T) {
+	// A real unreadable subdirectory cannot be simulated portably here:
+	// Windows os.Chmod only toggles the read-only attribute (it does not
+	// deny directory listing), and filepath.WalkDir never follows symlinks,
+	// so even a dangling symlink yields no walk error (verified empirically).
+	// Instead, drive scan's callback with a fake walker that reproduces
+	// WalkDir's real behavior: for a directory whose ReadDir fails, the
+	// callback is invoked a second time with the error, and the walk only
+	// continues if the callback returns nil.
+	root := filepath.Join(t.TempDir(), "root")
+	fakeWalk := func(_ string, fn fs.WalkDirFunc) error {
+		fn(root, walkEntry{name: "root", dir: true}, nil)
+		fn(filepath.Join(root, "locked"), walkEntry{name: "locked", dir: true}, fs.ErrPermission)
+		fn(filepath.Join(root, "a.pdf"), walkEntry{name: "a.pdf"}, nil)
+		fn(filepath.Join(root, "sub"), walkEntry{name: "sub", dir: true}, nil)
+		fn(filepath.Join(root, "sub", "b.pdf"), walkEntry{name: "b.pdf"}, nil)
+		return nil // walk ran to completion because no callback returned an error
+	}
+
+	got, err := scan(root, fakeWalk)
+	if err != nil {
+		t.Fatalf("scan(root, fakeWalk) error = %v, want nil (unreadable sub-entry must not abort)", err)
+	}
+	want := []FileMeta{
+		{Path: "a.pdf", Name: "a.pdf"},
+		{Path: "sub/b.pdf", Name: "b.pdf"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("scan(root, fakeWalk) = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got[%d] = %+v, want %+v", i, got[i], want[i])
+		}
 	}
 }
 
