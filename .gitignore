@@ -1,4 +1,33 @@
+# SDD 控制器工作区（台账、简报、审阅包）
 .superpowers/
+
+# 构建产物
 recorder.exe
-dist/
+/dist/
 node_modules/
+
+# 密钥与凭据——绝不允许入库
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+credentials.json
+*credentials*.json
+!docs/**/credentials*.md
+
+# 本地数据库与运行时数据
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.local.json
+
+# 编辑器与系统
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+desktop.ini

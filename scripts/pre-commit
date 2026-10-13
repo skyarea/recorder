@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# 本地提交前防护：阻止密钥/凭据、大文件与构建产物进入 git。
+# 安装：bash scripts/install-hooks.sh
+# 绕过（仅在确实需要时）：git commit --no-verify
+set -euo pipefail
+
+fail=0
+msg() { printf '\n\033[31m✗ %s\033[0m\n' "$1"; fail=1; }
+
+# 已暂存的改动（含新增/修改内容），二进制用 -a 安全输出
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+# --- 1. 密钥与凭据模式 ---
+# 注意：本文件自身、以及密钥扫描规则/文档，会合法地包含这些模式字面量。
+# 因此按字符类拼接，避免在源码里出现可被匹配的完整字面量。
+_prefix_g='gh''p_'
+_prefix_p='github_''pat_'
+_prefix_o='gh''o_'
+_prefix_s='gh''s_'
+secret_re="${_prefix_g}[A-Za-z0-9]{20,}|${_prefix_p}[A-Za-z0-9_]{20,}|${_prefix_o}[A-Za-z0-9]{20,}|${_prefix_s}[A-Za-z0-9]{20,}|x-access-""token:[^@[:space:]]+|Authorization:[[:space:]]*token[[:space:]]+[A-Za-z0-9_-]{16,}|-----BEGIN [A-Z ]*PRIV""ATE KEY-----|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{32,}"
+for f in $staged; do
+  [ -f "$f" ] || continue
+  # 例外：扫描器自身的定义文件，其内容本来就是这些模式
+  case "$f" in
+    scripts/pre-commit|.github/workflows/secret-scan.yml|.gitleaks.toml) continue ;;
+  esac
+  hits=$(git diff --cached -U0 -- "$f" | grep -E '^\+' | grep -nEI "$secret_re" || true)
+  if [ -n "$hits" ]; then
+    msg "疑似密钥出现在 $f："
+    printf '%s\n' "$hits" | sed 's/^/    /'
+  fi
+done
+
+# --- 2. 不该入库的路径 ---
+for f in $staged; do
+  case "$f" in
+    .env|.env.*|*.pem|*.key|*.p12|*.pfx|*.exe|*.db|*.sqlite|.superpowers/*|*.local.json)
+      msg "不该提交的文件：$f" ;;
+  esac
+done
+
+# --- 3. 大文件（>5MB）---
+for f in $staged; do
+  [ -f "$f" ] || continue
+  size=$(wc -c < "$f")
+  if [ "$size" -gt 5242880 ]; then
+    msg "文件过大（$((size/1048576))MB）：$f"
+  fi
+done
+
+if [ "$fail" -ne 0 ]; then
+  printf '\n\033[31m提交已被本地钩子拦下。\033[0m修正后重试；确需绕过：git commit --no-verify\n\n'
+  exit 1
+fi
+exit 0

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>recorder — PDF 阅读进度与笔记</title>
+<meta name="description" content="本地优先的 Windows PDF 阅读器：阅读进度、笔记与标注，数据存在自己电脑上。">
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161a21; --border:#262c36; --fg:#e8ecf1;
+    --muted:#98a2b3; --accent:#4c8dff; --ok:#3fb950;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f7f8fa; --panel:#fff; --border:#e3e6ea; --fg:#1a1d21;
+           --muted:#5c6570; --accent:#1f6feb; --ok:#1a7f37; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:16px/1.65 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  main{max-width:760px;margin:0 auto;padding:56px 24px 80px}
+  h1{font-size:2rem;margin:0 0 8px;letter-spacing:-.02em}
+  .lede{color:var(--muted);margin:0 0 32px;font-size:1.05rem}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;
+        padding:24px;margin:0 0 20px}
+  .cta{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+  a.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;
+        font-weight:600;padding:11px 20px;border-radius:8px}
+  a.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--border)}
+  .meta{color:var(--muted);font-size:.9rem;margin-top:10px}
+  h2{font-size:1.1rem;margin:0 0 12px}
+  ul{margin:0;padding-left:20px}
+  li{margin:6px 0}
+  code{background:var(--bg);border:1px solid var(--border);border-radius:5px;
+       padding:2px 6px;font-size:.88em}
+  footer{color:var(--muted);font-size:.88rem;margin-top:32px;text-align:center}
+  .note{border-left:3px solid var(--accent);padding-left:14px;color:var(--muted);font-size:.93rem}
+</style>
+</head>
+<body>
+<main>
+  <h1>recorder</h1>
+  <p class="lede">本地优先的 Windows PDF 阅读器 —— 阅读进度、笔记与标注，数据都存在你自己的电脑上。</p>
+
+  <div class="card">
+    <h2>下载</h2>
+    <div class="cta">
+      <a class="btn" id="dl" href="https://github.com/skyarea/recorder/releases/latest">下载最新版</a>
+      <a class="btn ghost" href="https://github.com/skyarea/recorder/releases">全部版本</a>
+    </div>
+    <p class="meta" id="ver">正在读取最新版本…</p>
+    <p class="note">单文件 exe，无需安装：下载后双击即可运行。首次启动会自动扫描你选定的 PDF 目录。</p>
+  </div>
+
+  <div class="card">
+    <h2>功能</h2>
+    <ul>
+      <li>目录树扫描 + 阅读状态 / 进度 / 星标</li>
+      <li>划词高亮、自由画线、矩形框选三种标注</li>
+      <li>手写笔记（Markdown），可与标注双向互链、一键跳回 PDF 位置</li>
+      <li>JSON 导出 / 导入备份，兼容旧版格式</li>
+      <li>深色 / 浅色主题，快捷键 J / K / 1-4 / S / /</li>
+      <li>无网络依赖、无账号：文档与笔记只落在本机 <code>%APPDATA%\recorder\</code></li>
+    </ul>
+  </div>
+
+  <footer>
+    <a href="https://github.com/skyarea/recorder">源码</a> ·
+    <a href="https://github.com/skyarea/recorder/issues">反馈问题</a>
+  </footer>
+</main>
+
+<script>
+// 从 Releases API 读取最新版本号，让页面无需手动更新
+fetch('https://api.github.com/repos/skyarea/recorder/releases/latest')
+  .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+  .then(function (rel) {
+    var exe = (rel.assets || []).find(function (a) { return /\.exe$/i.test(a.name); });
+    if (exe) {
+      document.getElementById('dl').href = exe.browser_download_url;
+    }
+    var when = new Date(rel.published_at).toLocaleDateString('zh-CN');
+    document.getElementById('ver').textContent =
+      '最新版本 ' + (rel.tag_name || '') + ' · ' + when + ' 发布';
+  })
+  .catch(function () {
+    // 尚未发布任何版本时不要误导用户
+    document.getElementById('ver').textContent =
+      '尚未发布正式版本 —— 开发中，请先查看源码';
+  });
+</script>
+</body>
+</html>

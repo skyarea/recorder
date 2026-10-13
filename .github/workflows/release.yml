@@ -1,0 +1,77 @@
+name: Release
+
+# tag 触发（正式发布）或手动触发（预演/补发）。
+# 注意：完整的发布依赖 Task 14 的打包能力（图标 rsrc、-X main.version、dist/recorder.exe）。
+# Task 14 完成前手动跑会成功但产物是当前骨架，勿对外发布。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的 tag（如 v0.1.0），手动触发时必填"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build and publish exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Test before shipping
+        env:
+          CGO_ENABLED: "0"
+        run: go test ./... -count=1
+
+      - name: Build dist/recorder.exe
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # 约定的打包命令（Task 14 起有效）；图标 .syso 存在时自动被 go build 收录
+          go build -trimpath \
+            -ldflags "-s -w -X main.version=${{ steps.ver.outputs.version }}" \
+            -o dist/recorder.exe .
+
+      - name: Smoke check the binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/recorder.exe
+          ls -lh dist/recorder.exe
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          files: dist/recorder.exe
+          fail_on_unmatched_files: true
