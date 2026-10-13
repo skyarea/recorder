@@ -94,11 +94,22 @@ func TestScanSkipsUnreadableSubEntries(t *testing.T) {
 	// continues if the callback returns nil.
 	root := filepath.Join(t.TempDir(), "root")
 	fakeWalk := func(_ string, fn fs.WalkDirFunc) error {
-		fn(root, walkEntry{name: "root", dir: true}, nil)
-		fn(filepath.Join(root, "locked"), walkEntry{name: "locked", dir: true}, fs.ErrPermission)
-		fn(filepath.Join(root, "a.pdf"), walkEntry{name: "a.pdf"}, nil)
-		fn(filepath.Join(root, "sub"), walkEntry{name: "sub", dir: true}, nil)
-		fn(filepath.Join(root, "sub", "b.pdf"), walkEntry{name: "b.pdf"}, nil)
+		steps := []struct {
+			path  string
+			entry walkEntry
+			err   error
+		}{
+			{root, walkEntry{name: "root", dir: true}, nil},
+			{filepath.Join(root, "locked"), walkEntry{name: "locked", dir: true}, fs.ErrPermission},
+			{filepath.Join(root, "a.pdf"), walkEntry{name: "a.pdf"}, nil},
+			{filepath.Join(root, "sub"), walkEntry{name: "sub", dir: true}, nil},
+			{filepath.Join(root, "sub", "b.pdf"), walkEntry{name: "b.pdf"}, nil},
+		}
+		for _, s := range steps {
+			if err := fn(s.path, s.entry, s.err); err != nil {
+				return err // WalkDir aborts and propagates the callback's error
+			}
+		}
 		return nil // walk ran to completion because no callback returned an error
 	}
 
