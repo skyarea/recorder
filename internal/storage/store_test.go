@@ -938,7 +938,10 @@ func TestRestoreBatchReplacesAllPreservingIDs(t *testing.T) {
 			t.Errorf("old record survived restore: %+v", f)
 		}
 	}
-	// Verbatim ids and timestamps.
+	// Verbatim ids and timestamps. These two records satisfy the
+	// files-table invariants, so RestoreBatch's normalisation is a
+	// no-op for them (TestRestoreBatchNormalizesFileRecords pins the
+	// repairing of records that do not).
 	if len(got.Files) != 2 || got.Files[0] != batch.Files[0] || got.Files[1] != batch.Files[1] {
 		t.Errorf("restored files = %+v, want %+v verbatim", got.Files, batch.Files)
 	}
@@ -981,6 +984,78 @@ func TestRestoreBatchReplacesAllPreservingIDs(t *testing.T) {
 	}
 	if got.Settings["root_name"] != "books" || got.Settings["theme"] != "dark" {
 		t.Errorf("after empty restore, settings = %v, want both preserved", got.Settings)
+	}
+}
+
+// TestRestoreBatchNormalizesFileRecords pins the files-table invariants
+// at the RestoreBatch boundary: a batch whose file records violate what
+// SetStatus/SetProgress/SetTotalPages enforce (page >= 0, total_pages
+// >= 0, page <= total_pages, status in todo|reading|done|skip) is
+// repaired on the way in, never stored. Ids/timestamps and the
+// note/annotation rows stay verbatim.
+func TestRestoreBatchNormalizesFileRecords(t *testing.T) {
+	s := newTestStore(t)
+	const (
+		over  = "C:/books/over.pdf"  // page 15 > totalPages 10
+		neg   = "C:/books/neg.pdf"   // page -3
+		bogus = "C:/books/bogus.pdf" // status "bogus"
+		empty = "C:/books/empty.pdf" // status "" and totalPages -1
+	)
+	batch := Dump{
+		Files: []FileRec{
+			{Path: over, Status: "reading", Page: 15, TotalPages: 10, Starred: true, UpdatedAt: "2020-01-02T03:04:05Z"},
+			{Path: neg, Status: "done", Page: -3, TotalPages: 8, UpdatedAt: "2020-01-02T03:04:05Z"},
+			{Path: bogus, Status: "bogus", Page: 0, TotalPages: 0, UpdatedAt: "2020-01-02T03:04:05Z"},
+			{Path: empty, Status: "", Page: 7, TotalPages: -1, UpdatedAt: "2020-01-02T03:04:05Z"},
+		},
+		Notes: []Note{
+			{ID: "note-verbatim", FilePath: over, Text: "kept", TS: "2018-11-12T13:14:15Z", AnnIDs: []string{}},
+		},
+	}
+	if err := s.RestoreBatch(batch); err != nil {
+		t.Fatalf("RestoreBatch: %v", err)
+	}
+
+	cases := []struct {
+		path string
+		want FileRec
+	}{
+		{over, FileRec{Path: over, Status: "reading", Page: 10, TotalPages: 10, Starred: true, UpdatedAt: "2020-01-02T03:04:05Z"}},
+		{neg, FileRec{Path: neg, Status: "done", Page: 0, TotalPages: 8, UpdatedAt: "2020-01-02T03:04:05Z"}},
+		{bogus, FileRec{Path: bogus, Status: "todo", Page: 0, TotalPages: 0, UpdatedAt: "2020-01-02T03:04:05Z"}},
+		{empty, FileRec{Path: empty, Status: "todo", Page: 0, TotalPages: 0, UpdatedAt: "2020-01-02T03:04:05Z"}},
+	}
+	for _, tc := range cases {
+		got, err := s.File(tc.path)
+		if err != nil {
+			t.Fatalf("File(%q): %v", tc.path, err)
+		}
+		if got != tc.want {
+			t.Errorf("File(%q) = %+v, want normalised %+v", tc.path, got, tc.want)
+		}
+	}
+
+	// ListFiles sees exactly the same four rows, all invariant-clean.
+	files, err := s.ListFiles()
+	if err != nil {
+		t.Fatalf("ListFiles: %v", err)
+	}
+	if len(files) != len(cases) {
+		t.Fatalf("ListFiles = %d rows, want %d", len(files), len(cases))
+	}
+	for _, f := range files {
+		if f.Page < 0 || f.TotalPages < 0 || f.Page > f.TotalPages || !validStatuses[f.Status] {
+			t.Errorf("ListFiles row violates the setter invariants: %+v", f)
+		}
+	}
+
+	// Notes restore verbatim regardless of file normalisation.
+	notes, err := s.ListNotes(over)
+	if err != nil {
+		t.Fatalf("ListNotes: %v", err)
+	}
+	if len(notes) != 1 || notes[0].ID != "note-verbatim" || notes[0].TS != "2018-11-12T13:14:15Z" {
+		t.Errorf("restored notes = %+v, want note-verbatim with verbatim ts", notes)
 	}
 }
 

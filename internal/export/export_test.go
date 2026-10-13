@@ -473,6 +473,79 @@ func TestImportMergeNewerWins(t *testing.T) {
 	}
 }
 
+// TestImportNormalizesFileRecords pins the import half of Review Focus
+// #4: JSON import is a second write path into the files table and must
+// not store rows the Set* setters refuse to write. Input records with
+// page > totalPages, a negative page and a bogus status come out as
+// {page:10, totalPages:10}, page 0 and status "todo" — in both replace
+// and merge mode, since both share RestoreBatch's normalisation.
+func TestImportNormalizesFileRecords(t *testing.T) {
+	const input = `{
+  "version": 1,
+  "rootName": "books",
+  "files": {
+    "C:/books/over.pdf": {"status":"reading","page":15,"totalPages":10,"starred":false,"notes":[],"updatedAt":"2030-01-01T00:00:00Z"},
+    "C:/books/neg.pdf": {"status":"done","page":-3,"totalPages":8,"starred":false,"notes":[],"updatedAt":"2030-01-01T00:00:00Z"},
+    "C:/books/bogus.pdf": {"status":"bogus","page":0,"totalPages":0,"starred":false,"notes":[],"updatedAt":"2030-01-01T00:00:00Z"}
+  }
+}`
+
+	for _, replace := range []bool{true, false} {
+		// Fresh store: every incoming record wins even in merge mode,
+		// so both write paths through RestoreBatch are exercised.
+		s := newTestStore(t)
+		imported, err := ImportJSON(s, []byte(input), replace)
+		if err != nil {
+			t.Fatalf("ImportJSON(replace=%v): %v", replace, err)
+		}
+		if imported != 3 {
+			t.Errorf("ImportJSON(replace=%v) imported = %d, want 3", replace, imported)
+		}
+
+		cases := []struct {
+			path string
+			want storage.FileRec
+		}{
+			{"C:/books/over.pdf", storage.FileRec{
+				Path: "C:/books/over.pdf", Status: "reading", Page: 10, TotalPages: 10,
+				UpdatedAt: "2030-01-01T00:00:00Z",
+			}},
+			{"C:/books/neg.pdf", storage.FileRec{
+				Path: "C:/books/neg.pdf", Status: "done", Page: 0, TotalPages: 8,
+				UpdatedAt: "2030-01-01T00:00:00Z",
+			}},
+			{"C:/books/bogus.pdf", storage.FileRec{
+				Path: "C:/books/bogus.pdf", Status: "todo", Page: 0, TotalPages: 0,
+				UpdatedAt: "2030-01-01T00:00:00Z",
+			}},
+		}
+		for _, tc := range cases {
+			got, err := s.File(tc.path)
+			if err != nil {
+				t.Fatalf("File(%q): %v", tc.path, err)
+			}
+			if got != tc.want {
+				t.Errorf("replace=%v File(%q) = %+v, want normalised %+v", replace, tc.path, got, tc.want)
+			}
+		}
+
+		// ListFiles agrees: every stored row satisfies the invariants.
+		files, err := s.ListFiles()
+		if err != nil {
+			t.Fatalf("ListFiles: %v", err)
+		}
+		if len(files) != len(cases) {
+			t.Fatalf("replace=%v ListFiles = %d rows, want %d", replace, len(files), len(cases))
+		}
+		for _, f := range files {
+			if f.Page < 0 || f.TotalPages < 0 || f.Page > f.TotalPages ||
+				f.Status != "todo" && f.Status != "reading" && f.Status != "done" && f.Status != "skip" {
+				t.Errorf("replace=%v ListFiles row violates the setter invariants: %+v", replace, f)
+			}
+		}
+	}
+}
+
 // TestImportRejectsInvalidWithoutTouchingStore pins Review Focus #5:
 // invalid JSON or a missing/non-object files key must return an error
 // and leave every table of the store byte-identical.

@@ -98,17 +98,48 @@ func (s *Store) Dump() (Dump, error) {
 	return d, nil
 }
 
+// normalizeFileRec enforces the files-table invariants the everyday
+// setters maintain (SetStatus/SetProgress/SetTotalPages), so both
+// write paths into the files table agree on what a stored row may look
+// like: negative page/total_pages clamp to 0, a page above total_pages
+// links down (SetTotalPages' rule) and a status outside
+// todo|reading|done|skip becomes "todo". RestoreBatch applies it at the
+// import boundary — bad input is repaired rather than rejected, because
+// a backup must import.
+func normalizeFileRec(f FileRec) FileRec {
+	if f.Page < 0 {
+		f.Page = 0
+	}
+	if f.TotalPages < 0 {
+		f.TotalPages = 0
+	}
+	if f.Page > f.TotalPages {
+		f.Page = f.TotalPages
+	}
+	if !validStatuses[f.Status] {
+		f.Status = "todo"
+	}
+	return f
+}
+
 // RestoreBatch replaces the entire content of the files, notes,
 // annotations and note_annotations tables with d and upserts d.Settings
 // — all in one transaction, so either the whole restore commits or
 // nothing changes. It is the id/ts-preserving counterpart of the
 // Add*/Set* API for JSON import: ids, ts, created_at and updated_at are
-// stored exactly as given and the value validation the everyday API
-// performs (statuses, annotation kinds) is deliberately skipped so a
-// backup restores verbatim; callers pre-validate their input. Settings
-// keys absent from d.Settings are left alone. Duplicate paths, note
-// ids, annotation ids or link pairs in d make the batch fail and roll
-// back.
+// stored exactly as given, and notes and annotations restore verbatim
+// (Note.Page is a nullable pointer with no invariant to keep, and
+// annotation kinds are not re-validated here).
+//
+// File records are the one exception: every record passes through
+// normalizeFileRec at this boundary, so the import — the second write
+// path into the files table, after the Set* setters — can never store
+// rows the rest of the app assumes cannot exist (page < 0,
+// total_pages < 0, page > total_pages, status outside
+// todo|reading|done|skip). Import must not be fragile, so offending
+// values are repaired, not rejected. Settings keys absent from
+// d.Settings are left alone. Duplicate paths, note ids, annotation ids
+// or link pairs in d make the batch fail and roll back.
 func (s *Store) RestoreBatch(d Dump) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -129,6 +160,9 @@ func (s *Store) RestoreBatch(d Dump) error {
 	}
 
 	for _, f := range d.Files {
+		// The single normalisation point: both the replace and the
+		// merge path of JSON import reach the files table here.
+		f = normalizeFileRec(f)
 		if _, err := tx.Exec(`
 			INSERT INTO files (path, status, page, total_pages, starred, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?)`,

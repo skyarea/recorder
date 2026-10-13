@@ -150,6 +150,10 @@ func ExportJSON(s *storage.Store, rootName string) ([]byte, error) {
 //
 // The returned count is the number of file records taken from the
 // input: all of them when replace, only the winning paths when merging.
+// Invalid file-field values (negative page/totalPages, page above
+// totalPages, status outside todo|reading|done|skip) are not an error:
+// RestoreBatch normalises them to the setter invariants on the way in,
+// in both modes.
 func ImportJSON(s *storage.Store, data []byte, replace bool) (int, error) {
 	var doc document
 	if err := json.Unmarshal(data, &doc); err != nil {
