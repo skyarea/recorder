@@ -793,3 +793,203 @@ func TestListNotesReturnsAnnIDs(t *testing.T) {
 		t.Errorf("unlinked note AnnIDs = %v, want empty", n.AnnIDs)
 	}
 }
+
+// TestDumpReturnsFullSnapshot checks that Dump reports every table with
+// its documented deterministic order and verbatim ids/timestamps.
+func TestDumpReturnsFullSnapshot(t *testing.T) {
+	s := newTestStore(t)
+	const pA = "C:/books/a.pdf"
+	const pB = "C:/books/b.pdf"
+
+	if err := s.SetStatus(pB, "done"); err != nil {
+		t.Fatalf("SetStatus(pB): %v", err)
+	}
+	if err := s.SetStatus(pA, "reading"); err != nil {
+		t.Fatalf("SetStatus(pA): %v", err)
+	}
+	if err := s.SetProgress(pA, 2); err != nil {
+		t.Fatalf("SetProgress: %v", err)
+	}
+	nB := mustSeedNote(t, s, pB, "b note", nil)
+	nA := mustSeedNote(t, s, pA, "a note", nil)
+	aB, err := s.AddAnnotation(pB, 1, "box", `{}`)
+	if err != nil {
+		t.Fatalf("AddAnnotation(pB): %v", err)
+	}
+	aA, err := s.AddAnnotation(pA, 2, "highlight", `{}`)
+	if err != nil {
+		t.Fatalf("AddAnnotation(pA): %v", err)
+	}
+	if err := s.LinkNote(nA.ID, aA.ID); err != nil {
+		t.Fatalf("LinkNote: %v", err)
+	}
+	if err := s.SetSetting("theme", "dark"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+
+	d, err := s.Dump()
+	if err != nil {
+		t.Fatalf("Dump: %v", err)
+	}
+
+	// Files ordered by path.
+	if len(d.Files) != 2 || d.Files[0].Path != pA || d.Files[1].Path != pB {
+		t.Fatalf("Dump.Files = %+v, want %q then %q", d.Files, pA, pB)
+	}
+	if d.Files[0].Status != "reading" || d.Files[0].Page != 2 || d.Files[0].UpdatedAt == "" {
+		t.Errorf("Dump.Files[0] = %+v, want stored reading/2 values", d.Files[0])
+	}
+
+	// Notes ordered by file_path; ids/ts verbatim; AnnIDs empty (links
+	// live in Dump.Links).
+	if len(d.Notes) != 2 || d.Notes[0].ID != nA.ID || d.Notes[1].ID != nB.ID {
+		t.Fatalf("Dump.Notes = %+v, want %s then %s by file path", d.Notes, nA.ID, nB.ID)
+	}
+	if d.Notes[0].TS != nA.TS || d.Notes[0].Text != "a note" {
+		t.Errorf("Dump.Notes[0] = %+v, want verbatim %+v", d.Notes[0], nA)
+	}
+	if d.Notes[0].AnnIDs == nil {
+		t.Error("Dump.Notes[0].AnnIDs is nil, want empty non-nil slice")
+	}
+
+	// Annotations ordered by file_path.
+	if len(d.Annotations) != 2 || d.Annotations[0].ID != aA.ID || d.Annotations[1].ID != aB.ID {
+		t.Fatalf("Dump.Annotations = %+v, want %s then %s", d.Annotations, aA.ID, aB.ID)
+	}
+	if d.Annotations[0].CreatedAt != aA.CreatedAt {
+		t.Errorf("Dump.Annotations[0].CreatedAt = %q, want verbatim %q", d.Annotations[0].CreatedAt, aA.CreatedAt)
+	}
+
+	// Links by insertion order.
+	if len(d.Links) != 1 || d.Links[0] != [2]string{nA.ID, aA.ID} {
+		t.Errorf("Dump.Links = %v, want {%s %s}", d.Links, nA.ID, aA.ID)
+	}
+
+	// Settings.
+	if len(d.Settings) != 1 || d.Settings["theme"] != "dark" {
+		t.Errorf("Dump.Settings = %v, want {theme: dark}", d.Settings)
+	}
+
+	// An empty store dumps to empty (non-nil) containers.
+	empty := newTestStore(t)
+	d2, err := empty.Dump()
+	if err != nil {
+		t.Fatalf("Dump(empty): %v", err)
+	}
+	if d2.Files != nil || d2.Notes != nil || d2.Annotations != nil || d2.Links != nil {
+		t.Errorf("Dump(empty) data = %+v, want nil slices", d2)
+	}
+	if d2.Settings == nil || len(d2.Settings) != 0 {
+		t.Errorf("Dump(empty).Settings = %v, want empty map", d2.Settings)
+	}
+}
+
+// TestRestoreBatchReplacesAllPreservingIDs pins the import contract:
+// one transaction replaces every data table with the given records,
+// storing ids and timestamps verbatim; settings absent from the batch
+// survive; an empty batch wipes the data but not the settings.
+func TestRestoreBatchReplacesAllPreservingIDs(t *testing.T) {
+	s := newTestStore(t)
+	const old = "C:/books/old.pdf"
+
+	// Existing data that must disappear.
+	if err := s.SetStatus(old, "reading"); err != nil {
+		t.Fatalf("SetStatus: %v", err)
+	}
+	if _, err := s.AddNote(old, "doomed note", nil); err != nil {
+		t.Fatalf("AddNote: %v", err)
+	}
+	if _, err := s.AddAnnotation(old, 1, "line", `{}`); err != nil {
+		t.Fatalf("AddAnnotation: %v", err)
+	}
+	if err := s.SetSetting("theme", "dark"); err != nil {
+		t.Fatalf("SetSetting(theme): %v", err)
+	}
+
+	// Handcrafted batch with fixed ids and timestamps — the everyday
+	// API could never produce these, which is the point.
+	page := 7
+	batch := Dump{
+		Files: []FileRec{
+			{Path: "C:/books/a.pdf", Status: "done", Page: 3, TotalPages: 9, Starred: true, UpdatedAt: "2020-01-02T03:04:05Z"},
+			{Path: "C:/books/b.pdf", Status: "todo", UpdatedAt: "2019-05-06T07:08:09Z"},
+		},
+		Notes: []Note{
+			{ID: "note-fixed-1", FilePath: "C:/books/a.pdf", Text: "restored", Page: &page, TS: "2018-11-12T13:14:15Z", AnnIDs: []string{}},
+			{ID: "note-fixed-2", FilePath: "C:/books/a.pdf", Text: "no page", TS: "2018-11-12T13:14:16Z", AnnIDs: []string{}},
+		},
+		Annotations: []Annotation{
+			{ID: "ann-fixed-1", FilePath: "C:/books/a.pdf", Page: 4, Kind: "box", Data: `{"r":[1,1,1,1]}`, CreatedAt: "2017-01-01T00:00:00Z"},
+		},
+		Links:    [][2]string{{"note-fixed-1", "ann-fixed-1"}},
+		Settings: map[string]string{"root_name": "books"},
+	}
+	if err := s.RestoreBatch(batch); err != nil {
+		t.Fatalf("RestoreBatch: %v", err)
+	}
+
+	got, err := s.Dump()
+	if err != nil {
+		t.Fatalf("Dump(after restore): %v", err)
+	}
+	// The doomed record and its note/annotation are gone.
+	for _, f := range got.Files {
+		if f.Path == old {
+			t.Errorf("old record survived restore: %+v", f)
+		}
+	}
+	// Verbatim ids and timestamps.
+	if len(got.Files) != 2 || got.Files[0] != batch.Files[0] || got.Files[1] != batch.Files[1] {
+		t.Errorf("restored files = %+v, want %+v verbatim", got.Files, batch.Files)
+	}
+	if len(got.Notes) != 2 || got.Notes[0].ID != "note-fixed-1" || got.Notes[0].TS != "2018-11-12T13:14:15Z" {
+		t.Errorf("restored notes = %+v, want fixed id/ts verbatim", got.Notes)
+	}
+	if got.Notes[0].Page == nil || *got.Notes[0].Page != 7 || got.Notes[1].Page != nil {
+		t.Errorf("restored note pages = (%v, %v), want (7, nil)", got.Notes[0].Page, got.Notes[1].Page)
+	}
+	if len(got.Annotations) != 1 || got.Annotations[0].ID != "ann-fixed-1" || got.Annotations[0].CreatedAt != "2017-01-01T00:00:00Z" {
+		t.Errorf("restored annotations = %+v, want fixed id/created_at verbatim", got.Annotations)
+	}
+	// The link resolves through the public read API with the restored
+	// note's AnnIDs.
+	notes, err := s.ListNotes("C:/books/a.pdf")
+	if err != nil {
+		t.Fatalf("ListNotes: %v", err)
+	}
+	if len(notes) != 2 || len(notes[0].AnnIDs) != 1 || notes[0].AnnIDs[0] != "ann-fixed-1" {
+		t.Errorf("restored link not visible: %+v", notes)
+	}
+	// Settings: root_name upserted, theme untouched.
+	if v, ok, err := s.Setting("root_name"); err != nil || !ok || v != "books" {
+		t.Errorf("Setting(root_name) = (%q, %v, %v), want (\"books\", true, nil)", v, ok, err)
+	}
+	if v, ok, err := s.Setting("theme"); err != nil || !ok || v != "dark" {
+		t.Errorf("Setting(theme) = (%q, %v, %v), want preserved (\"dark\", true, nil)", v, ok, err)
+	}
+
+	// An empty batch wipes the data tables but keeps the settings.
+	if err := s.RestoreBatch(Dump{}); err != nil {
+		t.Fatalf("RestoreBatch(empty): %v", err)
+	}
+	got, err = s.Dump()
+	if err != nil {
+		t.Fatalf("Dump(after wipe): %v", err)
+	}
+	if len(got.Files) != 0 || len(got.Notes) != 0 || len(got.Annotations) != 0 || len(got.Links) != 0 {
+		t.Errorf("after empty restore, data = %+v, want all empty", got)
+	}
+	if got.Settings["root_name"] != "books" || got.Settings["theme"] != "dark" {
+		t.Errorf("after empty restore, settings = %v, want both preserved", got.Settings)
+	}
+}
+
+// mustSeedNote adds a note or fails the test.
+func mustSeedNote(t *testing.T, s *Store, path, text string, page *int) Note {
+	t.Helper()
+	n, err := s.AddNote(path, text, page)
+	if err != nil {
+		t.Fatalf("AddNote(%q): %v", text, err)
+	}
+	return n
+}
