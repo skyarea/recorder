@@ -89,6 +89,17 @@ func Open(dbPath string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// SQLite 是进程内的单文件数据库，不存在多连接带来的并发收益，
+	// 反而引入真实的失败模式：读写各占一条连接时，非 WAL 的 journal
+	// 模式下写方的 BEGIN IMMEDIATE 要等读方释放共享锁，一旦在慢盘 /
+	// 抢资源的 runner 上超过 busy_timeout(5000) 就报 SQLITE_BUSY。
+	// CI 已经两次因此挂掉（4f2f391、d5b49a1）。
+	// 把连接池压成一条：读写全部串行经过同一连接，跨连接的锁竞争
+	// 从机制上消失。每条 setter 的 BEGIN IMMEDIATE 仍能保住事务级原子性，
+	// 因为并发发生在 Go 的 goroutine 层，而不是数据库层。
+	db.SetMaxOpenConns(1)
+
 	for _, stmt := range []string{schemaFiles, schemaSettings, schemaNotes, schemaAnnotations, schemaNoteAnnotations} {
 		if _, err := db.Exec(stmt); err != nil {
 			_ = db.Close()
