@@ -50,3 +50,7 @@ jobs:
 
       - name: landing page contrast
         run: node docs/landing/check-contrast.mjs
+
+      - name: frontend tests
+        shell: bash
+        run: node --test tests/frontend/*.test.mjs

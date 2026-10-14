@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -23,7 +24,10 @@ func newTestApp(t *testing.T) (*App, *httptest.Server, string) {
 	}
 	t.Cleanup(func() { _ = a.Close() })
 
-	frontend := fstest.MapFS{"frontend/index.html": {Data: []byte("<html>real</html>")}}
+	frontend := fstest.MapFS{
+		"frontend/index.html":                  {Data: []byte("<html>real</html>")},
+		"frontend/vendor/pdfjs/web/viewer.mjs": {Data: []byte("export const viewer = 1;\n")},
+	}
 	srv := httptest.NewServer(a.Routes(frontend))
 	t.Cleanup(srv.Close)
 	return a, srv, root
@@ -550,5 +554,93 @@ func TestStaticFrontendServed(t *testing.T) {
 	n, _ := resp.Body.Read(buf)
 	if !strings.Contains(string(buf[:n]), "<html>real</html>") {
 		t.Fatalf("index not served: %q", buf[:n])
+	}
+}
+
+// getNoRedirect refuses to follow a redirect: a traversal attempt has to be
+// answered with 404 here and now, not bounced to some cleaned path.
+func getNoRedirect(t *testing.T, url string) *http.Response {
+	t.Helper()
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	return resp
+}
+
+func TestFilesRouteServesPDF(t *testing.T) {
+	_, srv, root := newTestApp(t)
+	makePdfs(t, root, "sub/a.pdf")
+	post(t, srv, "/api/root", map[string]any{"path": root})
+
+	resp, err := http.Get(srv.URL + "/files/sub/a.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("GET /files/sub/a.pdf = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/pdf" {
+		t.Fatalf("Content-Type = %q, want application/pdf", ct)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(body), "%PDF-1.4") {
+		t.Fatalf("body = %q, want PDF bytes", body)
+	}
+}
+
+func TestFilesRouteRejectsTraversal(t *testing.T) {
+	_, srv, root := newTestApp(t)
+	makePdfs(t, root, "a.pdf")
+	// A file just outside the root: if it ever comes back in a response,
+	// the containment check failed.
+	secret := filepath.Join(filepath.Dir(root), "secret.pdf")
+	if err := os.WriteFile(secret, []byte("TOP SECRET"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	post(t, srv, "/api/root", map[string]any{"path": root})
+
+	for _, path := range []string{
+		"/files/../secret.pdf",
+		"/files/../../secret.pdf",
+		"/files/%2e%2e/%2e%2e/secret.pdf",
+		"/files/..%2f..%2fsecret.pdf",
+		"/files/%2e%2e%5c%2e%2e%5csecret.pdf",
+	} {
+		resp := getNoRedirect(t, srv.URL+path)
+		if resp.StatusCode != 404 {
+			t.Fatalf("GET %s = %d, want a direct 404 (no redirect)", path, resp.StatusCode)
+		}
+	}
+
+	// With no root configured the route must stay shut as well.
+	_, srv2, _ := newTestApp(t)
+	if resp := getNoRedirect(t, srv2.URL+"/files/a.pdf"); resp.StatusCode != 404 {
+		t.Fatalf("GET /files with no root = %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestStaticServesMjsAsJavascript(t *testing.T) {
+	_, srv, _ := newTestApp(t)
+	resp, err := http.Get(srv.URL + "/vendor/pdfjs/web/viewer.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("GET viewer.mjs = %d, want 200", resp.StatusCode)
+	}
+	// A module script served as anything but JavaScript is refused by the
+	// browser, and the viewer never boots.
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/javascript") && !strings.HasPrefix(ct, "application/javascript") {
+		t.Fatalf("Content-Type of .mjs = %q, want a JavaScript type", ct)
 	}
 }

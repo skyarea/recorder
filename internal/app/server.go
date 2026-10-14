@@ -21,6 +21,7 @@ import (
 
 	"github.com/skyarea/recorder/internal/export"
 	"github.com/skyarea/recorder/internal/files"
+	"github.com/skyarea/recorder/internal/httpfiles"
 	"github.com/skyarea/recorder/internal/storage"
 )
 
@@ -132,14 +133,15 @@ func (a *App) rescan() error {
 
 func pathBase(p string) string { return path.Base(filepath.ToSlash(p)) }
 
-// Routes builds the full handler: /api/* JSON endpoints and the embedded
-// frontend as the catch-all.
+// Routes builds the full handler: /api/* JSON endpoints, /files/* document
+// streaming, and the embedded frontend as the catch-all.
 func (a *App) Routes(frontend fs.FS) http.Handler {
 	sub, err := fs.Sub(frontend, "frontend")
 	if err != nil {
 		sub = frontend
 	}
 	static := http.FileServerFS(sub)
+	files := httpfiles.NewHandler(a.currentRoot)
 
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/state", a.handleState)
@@ -174,7 +176,24 @@ func (a *App) Routes(frontend fs.FS) http.Handler {
 		h.ServeHTTP(w, r)
 	}))
 	root.Handle("/", static)
-	return root
+
+	// /files/* is matched ahead of the mux on purpose: a ServeMux (and the
+	// static catch-all) cleans "/files/../x" and answers with a redirect,
+	// but trying to leave the root must be a flat 404.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, httpfiles.Prefix) {
+			files.ServeHTTP(w, r)
+			return
+		}
+		root.ServeHTTP(w, r)
+	})
+}
+
+// currentRoot reads the configured root under the lock that guards it.
+func (a *App) currentRoot() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.root
 }
 
 // --- helpers -----------------------------------------------------------
@@ -552,29 +571,17 @@ func (a *App) handleReveal(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// resolveInRoot joins rel onto the root and refuses anything that escapes
-// it through .. or absolute-path tricks.
+// resolveInRoot maps rel onto the root through the same containment check
+// that guards /files/*, and requires the target to exist.
 func (a *App) resolveInRoot(rel string) (string, error) {
-	a.mu.Lock()
-	root := a.root
-	a.mu.Unlock()
-	if root == "" {
-		return "", errors.New("app: no root configured")
+	full, err := httpfiles.Resolve(a.currentRoot(), rel)
+	if err != nil {
+		return "", err
 	}
-	rootFull := filepath.Clean(filepath.FromSlash(root))
-	joined := filepath.Join(rootFull, filepath.FromSlash(rel))
-	if joined != rootFull && !isUnderRoot(rootFull, joined) {
-		return "", fmt.Errorf("app: path escapes root: %s", rel)
-	}
-	if _, err := os.Stat(joined); err != nil {
+	if _, err := os.Stat(full); err != nil {
 		return "", fmt.Errorf("app: not found: %s", rel)
 	}
-	return joined, nil
-}
-
-func isUnderRoot(root, p string) bool {
-	rp := filepath.Clean(p) + string(filepath.Separator)
-	return strings.HasPrefix(rp, filepath.Clean(root)+string(filepath.Separator))
+	return full, nil
 }
 
 // revealFile opens the OS file manager with the file selected.

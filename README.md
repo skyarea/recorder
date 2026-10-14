@@ -9,26 +9,24 @@
 
 ## 现在的状态
 
-**很早的阶段。** `go run .` 会开出一个窗口，里面只有一页占位文字 —— 没有任何功能。
+**能跑了，但只到「读」这一步。** `go run .` 会开出一个窗口：选定一个目录，左边列出其中的 PDF，点开就能在右边读 —— 内置的是 vendored 的 pdf.js 官方 viewer，滚动、缩放、`Ctrl+F`、缩略图、大纲、打印都在。读取进度目前只是显示出来，界面还没有写回的入口。
 
-已经写好的部分是三个 Go 库（有单元测试），以及把它们包起来的窗口骨架：
+已经写好的部分：
 
 | 已就绪 | 说明 | 用的地方 |
 | --- | --- | --- |
 | 数据层 | SQLite（纯 Go）—— 文件、进度、星标、笔记、标注、笔记↔标注多对多 | 有测试 |
 | 目录扫描 | 递归收集 PDF，路径为「根目录相对路径」，页数嗅探 | 有测试 |
 | 备份 | JSON 导出 / 导入，格式与旧版网页应用兼容 | 有测试 |
-| 窗口骨架 | Wails v3 窗口 + 嵌入前端资源 | 靠 `go build` 验证 |
+| 本地服务 | 只监听 `127.0.0.1` 随机端口的 HTTP 服务，`/api/*` 给前端取状态 | 有测试 |
+| 阅读器 | `/files/*` 供文档（含 Range），iframe + postMessage 桥 | 有测试 |
 
-**这四个包目前还没有被主程序调用过** —— `main.go` 只负责开窗，三个库只被测试引用。
-所以「写完了」不等于「能用」，它们要等 #6 的本地服务接进来才会真正跑起来。
+主程序已经把数据层、扫描和本地服务接起来了（#6、#7）；笔记与标注的表还没有任何界面在用。
 
 还没做的（按 [issue](https://github.com/skyarea/recorder/issues) 计，而非按内部计划计）：
 
 | # | 事项 |
 | --- | --- |
-| #6 | 本地 HTTP 服务与 `/api/*` 接口 |
-| #7 | PDF 真的能读（`/files/*` + pdf.js 阅读器） |
 | #8 | 应用界面（目录树、状态、搜索、主题） |
 | #9 | 阅读进度自动跟随 |
 | #10 ~ #13 | 三种标注工具（划词 / 画线 / 框选）与回访 |
@@ -41,7 +39,7 @@
 
 ## 界面示意
 
-下面是这个应用打算长成的样子 —— 一张矢量示意，不是运行截图（还没有可截的程序）。
+下面是这个应用打算长成的样子 —— 一张矢量示意，不是运行截图（图里的标注界面还没实现）。
 
 ![recorder 主界面示意：左侧是标着阅读状态的 PDF 目录树，中间 PDF 页面上有划词高亮、矩形框选和自由画线三种标注，右侧是带标注徽标的笔记面板](docs/pages/app-preview.svg)
 
@@ -58,11 +56,11 @@ go build ./...          # 编译
 go test ./... -count=1  # 测试
 go vet ./...            # 静态检查
 
-go run .                # 运行（开发）—— 目前只显示占位页
+go run .                # 运行（开发）—— 开窗并加载本地服务的前端
 ```
 
-Node 只在两个地方需要：CI 里跑落地页配色自检（`node docs/landing/check-contrast.mjs`），
-以及将来 vendor pdf.js。构建本项目本身不需要。
+Node 只在 CI 里需要：跑落地页配色自检（`node docs/landing/check-contrast.mjs`）
+和前端测试（`node --test tests/frontend/*.test.mjs`）。构建与运行本项目本身不需要 Node。
 
 数据目录（设计目标）见下面的「数据与备份」一节。
 
@@ -87,12 +85,14 @@ bash scripts/install-hooks.sh
 **从旧版导出的 JSON 可以直接导入新版**。反过来不成立：旧版 localStorage 的数据
 不会自动搬过来，要先用旧版导出。
 
-**注意：目前还没有代码会打开这个库**，所以现在跑起来不会生成这个文件。
+**注意：界面还不会往库里写进度和笔记**（#8、#9）—— `/api/*` 接口已经有了，
+前端还没有调用它们；扫描结果也只留在内存里。程序一跑起来这个文件就会被建出来，
+里面目前只有你选过的目录。
 
 ## 功能（目标形态）
 
-以下是这个应用做出来之后应该有的样子。除上面表格里那几个库之外，
-界面层一项都还没有开始。
+以下是这个应用做出来之后应该有的样子。目录扫描和 pdf.js 阅读器已经能用
+（见上面的「现在的状态」），其余的还在清单上。
 
 - **目录树扫描** —— 指定一个根目录，递归列出所有 PDF；路径用相对路径记录，换机器也能对上
 - **阅读状态与进度** —— `待读 / 在读 / 已读 / 跳过` 四态，滚动自动记录进度，星标收藏
@@ -134,7 +134,8 @@ bash scripts/install-hooks.sh
 - **无 CGO**：SQLite 必须用 `modernc.org/sqlite`，测试在 `CGO_ENABLED=0` 下通过
 - **无绑定生成器、无打包器**：纯 `go build` + `//go:embed`
 - **数据不迁移**：不兼容旧版 localStorage 数据（导出 / 导入 JSON 仅作备份功能）
-- **单根目录**：打算记住上次扫描目录并在启动时自动重扫，文件身份为「根目录相对路径、`/` 分隔」—— 见 #6
+- **单根目录**：上次扫描的目录记在设置里，启动时自动重扫；文件身份为「根目录相对路径、`/` 分隔」
+- **pdf.js 是 vendored 的第三方源码**：`frontend/vendor/pdfjs/` 保持上游目录结构、原样不动，`VERSION` 记下版本号。升级 = 用新 release 的产物整目录替换（同样精简掉 sourcemap、多余语言、debugger、示例 PDF），再把 `viewer.html` 里那一行 `<script src="../../../viewer-bridge.mjs">` 补回去 —— 那是全树唯一一处本地改动
 
 设计文档在 [`docs/superpowers/specs/`](docs/superpowers/specs/)，
 实现计划在 [`docs/superpowers/plans/`](docs/superpowers/plans/)。
@@ -143,7 +144,7 @@ bash scripts/install-hooks.sh
 
 | Workflow | 触发 | 内容 |
 | --- | --- | --- |
-| [CI](.github/workflows/ci.yml) | push / PR | `gofmt`、`go vet`、`go build`、`go test`（`CGO_ENABLED=0`）、落地页配色对比度 |
+| [CI](.github/workflows/ci.yml) | push / PR | `gofmt`、`go vet`、`go build`、`go test`（`CGO_ENABLED=0`）、落地页配色对比度、前端测试（`node --test`） |
 | [Secret scan](.github/workflows/secret-scan.yml) | push / PR | gitleaks 全历史密钥扫描 |
 | [Release](.github/workflows/release.yml) | tag `v*` / 手动 | 构建并发布 `recorder.exe`（尚无 tag，从未运行） |
 | [Deploy Pages](.github/workflows/pages.yml) | `docs/pages/**` 变更 | 发布下载引导页（工作流本身可用，但仓库尚未启用 Pages） |
