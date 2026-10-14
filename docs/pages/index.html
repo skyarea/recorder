@@ -65,6 +65,7 @@
 
   /* 排版标尺 */
   --fs-sm:.88rem;      /* 页脚、代码 */
+  --fs-xs:.75rem;      /* kbd 里的键名：比 .keys 的 .88rem 再小一档 */
   --fs-base:1rem;      /* 正文基准 */
   --fs-md:1.05rem;     /* 引言 */
   --fs-lg:1.35rem;     /* 小节标题 */
@@ -83,6 +84,9 @@
   /* 间距梯度：单基数缩放，避免出现 13px / 14px / 15px 这类随手值 */
   --sp-1:4px;
   --sp-2:6px;
+  /* sp-1 之下的一档：只用于 kbd、状态标记这类「贴着文字」的微型内边距。
+     不放 --sp-1 是为了让 4px 仍然是网格间距的最小步长。 */
+  --sp-0:2px;
   --sp-3:8px;
   --sp-4:12px;
   --sp-5:14px;
@@ -97,10 +101,11 @@
   /* 版心 */
   --container:1120px;
 
-  /* 圆角：小元件 → 卡片。参考使用 .75rem，这里对齐。 */
+  /* 圆角：小元件 → 卡片 → 全圆的胶囊（状态标记）。参考使用 .75rem，这里对齐。 */
   --r-sm:6px;
   --r-md:10px;
   --r-lg:12px;
+  --r-pill:99px;
 
   /* 阴影：暖色投影，避免冷灰阴影在暖底上显脏 */
   --sh-1:0 1px 2px hsl(30 15% 15% / .06), 0 1px 3px hsl(30 15% 15% / .04);
@@ -295,7 +300,7 @@ a.btn.ghost{
 /* 运行要求：四行「项目 / 值」，比一段话好扫读 */
 .req{
   display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));
   gap:var(--sp-4) var(--sp-7);
   margin:var(--sp-5) 0 0;
 }
@@ -346,22 +351,23 @@ a.btn.ghost{
 
 .keys kbd{
   font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-  font-size:.85em;
+  font-size:var(--fs-xs);
   background:hsl(var(--c-bg));
   border:1px solid hsl(var(--c-border));
-  border-bottom-width:2px;
+  border-bottom-width:var(--sp-0);
   border-radius:var(--r-sm);
-  padding:2px var(--sp-2);
+  padding:var(--sp-0) var(--sp-2);
   margin:0 1px;
 }
 
 .keys td{color:hsl(var(--c-fg-muted))}
 
 @media (max-width:560px){
-  .keys th{width:auto}
+  /* nowrap 在窄屏下放开，否则长键位没有断行点 */
+  .keys th{width:auto;white-space:normal}
   .keys th,.keys td{display:block;border-bottom:none;padding:var(--sp-2) 0}
-  .keys tr{border-bottom:1px solid hsl(var(--c-border));display:block;padding:var(--sp-2) 0}
-  .keys tr:last-child{border-bottom:none}
+  .keys tbody tr{display:block;padding:var(--sp-2) 0;border-bottom:1px solid hsl(var(--c-border))}
+  .keys tbody tr:last-child{border-bottom:none}
 }
 
 /* ==========================================================================
@@ -372,7 +378,6 @@ a.btn.ghost{
 .faq dt{
   font-weight:var(--fw-semibold);
   margin:var(--sp-5) 0 0;
-  scroll-margin-top:var(--sp-6);
 }
 
 .faq dt:first-child{margin-top:0}
@@ -384,34 +389,39 @@ a.btn.ghost{
   max-width:74ch;
 }
 
-ul{
-  margin:0;
-  padding-left:var(--sp-6);
-}
-
-li{
-  margin:var(--sp-2) 0;
-}
-
 /* ==========================================================================
    功能网格
    --------------------------------------------------------------------------
    每张卡 = 标题 + 一行说明 + 状态标记。卡片用 card 表面，落在 quiet 区块
    （muted 表面）上，层次由明度差给出，不靠再加一层描边。
 
-   状态标记只有两种颜色：强调色实底 = 已经在跑，描边幽灵 = 计划中。
+   状态标记只有两种颜色：强调色实底 = 写完了，描边幽灵 = 还没写。
    不引入第三个色相 —— 全页只允许一个强调色。
    ========================================================================== */
 .grid{
   display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+  /* 固定三列，不用 auto-fit：两组卡片数量不同（3 张和 6 张），
+     auto-fit 会让它们各自算出不同的列宽，同一组分出两种节奏。
+     固定列数下，3 张正好一行、6 张正好两行，两组对齐。
+     minmax(0,…) 是必须的：卡片里有长英文/长路径时，
+     默认的 minmax(auto,…) 会让轨道被内容顶宽。 */
+  grid-template-columns:repeat(3,minmax(0,1fr));
   gap:var(--sp-5);
   list-style:none;
   margin:0;
   padding:0;
 }
 
-.grid + .grid{margin-top:var(--sp-5)}
+/* list-style:none 会连带去掉 Safari/VoiceOver 里的列表语义，
+   所以在 HTML 上补了 role="list"（见两处 <ul class="grid" role="list">） */
+
+@media (max-width:900px){
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media (max-width:560px){
+  .grid{grid-template-columns:minmax(0,1fr)}
+}
 
 .feat{
   background:hsl(var(--c-card));
@@ -439,8 +449,8 @@ li{
 .pill{
   font-size:var(--fs-sm);
   font-weight:var(--fw-medium);
-  padding:2px var(--sp-2);
-  border-radius:99px;
+  padding:var(--sp-0) var(--sp-2);
+  border-radius:var(--r-pill);
   white-space:nowrap;
   flex:0 0 auto;
 }
@@ -467,8 +477,12 @@ code{
   background:hsl(var(--c-bg));
   border:1px solid hsl(var(--c-border));
   border-radius:var(--r-sm);
-  padding:2px var(--sp-2);
+  padding:var(--sp-0) var(--sp-2);
   font-size:var(--fs-sm);
+  /* Windows 路径全是反斜杠，没有自然断行点，不设这个会把它所在的
+     容器顶宽 —— %APPDATA%\recorder\recorder.db 在 320px 下会溢出 23px */
+  overflow-wrap:anywhere;
+  word-break:break-all;
 }
 
 footer{
@@ -501,6 +515,10 @@ footer a{color:hsl(var(--c-accent))}
     HTML 里的默认状态就是「还没发布」那一档，而不是「正在读取」。
     这样禁用 JS 的人看到的是实情，不至于停在一句永远的「正在读取…」上；
     JS 跑起来发现有 release，再把它升级成真正的下载态。
+
+    留给后来的人：仓库一旦打了第一个 tag，就要把这段 HTML 的默认值
+    换成「已发布」那一档 —— 否则禁用 JS 的访客会看到一句已经不成立的话。
+    在那之前，这里的默认值就是当前仓库的真实状态。
   -->
   <div class="cta hero-cta">
     <a class="btn" id="dl" href="https://github.com/skyarea/recorder">开发中 · 看源码</a>
@@ -517,7 +535,8 @@ footer a{color:hsl(var(--c-accent))}
 
   <div class="band" id="download">
     <h2>下载</h2>
-    <p>单文件 exe，无需安装：下载后双击即可运行。首次启动会请你选一个资料文件夹，之后每次开窗自动重扫。</p>
+    <p>做好了之后会是单文件 exe：下载、双击、跑，不写注册表也不要安装。
+       首次启动会请你选一个资料文件夹，之后每次开窗自动重扫。</p>
     <dl class="req">
       <div><dt>系统</dt><dd>Windows 10 / 11</dd></div>
       <div><dt>安装</dt><dd>不需要 —— 单文件，不写注册表</dd></div>
@@ -530,12 +549,13 @@ footer a{color:hsl(var(--c-accent))}
   <div class="band quiet" id="features">
     <h2>功能</h2>
     <p class="group-note">下面分成两组：底层那几个 Go 包已经写好并有单元测试，窗口骨架也已经能开出来
-       （里面目前只是一页占位文字）。标了色的小圆片是「已经在跑」的，描边的那种是「计划中」。</p>
+       （里面目前只是一页占位文字）。标了色的小圆片是「写完了」的，描边的那种是「还没写」——
+       注意「写完了」不等于「能用」，这三个包目前还没有被主程序调用，要等本地服务接进来才会真正跑起来。</p>
 
-    <ul class="grid">
+    <ul class="grid" role="list">
       <li class="feat">
         <h3>数据层 <span class="pill done">已就绪</span></h3>
-        <p>进度、状态、星标、笔记、标注都存在一个 SQLite 文件里，不删浏览器缓存就丢。</p>
+        <p>进度、状态、星标、笔记、标注都存在一个 SQLite 文件里，不随浏览器缓存消失。</p>
       </li>
       <li class="feat">
         <h3>目录扫描 <span class="pill done">已就绪</span></h3>
@@ -547,32 +567,32 @@ footer a{color:hsl(var(--c-accent))}
       </li>
     </ul>
 
-    <p class="group-note">界面层还在盖，下面这些都还不能用：</p>
+    <p class="group-note">界面层一项都还没有开始，下面这些都还不能用：</p>
 
-    <ul class="grid">
+    <ul class="grid" role="list">
       <li class="feat">
-        <h3>阅读状态与进度 <span class="pill todo">计划中</span></h3>
+        <h3>阅读状态与进度 <span class="pill todo">还没写</span></h3>
         <p>待读 / 在读 / 已读 / 跳过四态，翻页自动记进度，星标收藏。</p>
       </li>
       <li class="feat">
-        <h3>三种标注 <span class="pill todo">计划中</span></h3>
+        <h3>三种标注 <span class="pill todo">还没写</span></h3>
         <p>划词高亮、自由画线、矩形框选，标注跟着页面缩放不跑位。</p>
       </li>
       <li class="feat">
-        <h3>手写笔记 <span class="pill todo">计划中</span></h3>
+        <h3>手写笔记 <span class="pill todo">还没写</span></h3>
         <p>笔记永远由你自己写，支持 Markdown，可以直接挂到标注上。</p>
       </li>
       <li class="feat">
-        <h3>统计与搜索 <span class="pill todo">计划中</span></h3>
+        <h3>统计与搜索 <span class="pill todo">还没写</span></h3>
         <p>按状态统计，全文搜索笔记内容。</p>
       </li>
       <li class="feat">
-        <h3>深色 / 浅色 <span class="pill todo">计划中</span></h3>
-        <p>跟随系统，一套快捷键走完全部操作。</p>
+        <h3>深色 / 浅色 <span class="pill todo">还没写</span></h3>
+        <p>打算跟随系统切换，不额外设一个开关。</p>
       </li>
       <li class="feat">
-        <h3>阅读体验 <span class="pill todo">计划中</span></h3>
-        <p>基于 pdf.js 官方阅读器：查找、打印、缩略图、大纲、缩放都在。</p>
+        <h3>阅读体验 <span class="pill todo">还没写</span></h3>
+        <p>打算基于 pdf.js 官方阅读器：查找、打印、缩略图、大纲、缩放都留着。</p>
       </li>
     </ul>
   </div>
@@ -582,13 +602,13 @@ footer a{color:hsl(var(--c-accent))}
     <table class="keys">
       <caption>计划形态，界面做好之后生效。沿用参考实现的键位。</caption>
       <tbody>
-        <tr><th><kbd>J</kbd> / <kbd>K</kbd>（或 <kbd>↓</kbd> <kbd>↑</kbd>）</th><td>跳到列表里下一个 / 上一个文件</td></tr>
-        <tr><th><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></th><td>设为待读 / 在读 / 已读 / 跳过</td></tr>
-        <tr><th><kbd>S</kbd></th><td>切换星标</td></tr>
-        <tr><th><kbd>/</kbd></th><td>光标进搜索框</td></tr>
-        <tr><th><kbd>Enter</kbd></th><td>页码框里回车 = 跳页</td></tr>
-        <tr><th><kbd>Ctrl</kbd>+<kbd>Enter</kbd></th><td>保存正在写的笔记</td></tr>
-        <tr><th><kbd>Esc</kbd></th><td>取消编辑中的笔记</td></tr>
+        <tr><th scope="row"><kbd>J</kbd> / <kbd>K</kbd>（或 <kbd>↓</kbd> <kbd>↑</kbd>）</th><td>跳到列表里下一个 / 上一个文件</td></tr>
+        <tr><th scope="row"><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></th><td>设为待读 / 在读 / 已读 / 跳过</td></tr>
+        <tr><th scope="row"><kbd>S</kbd></th><td>切换星标</td></tr>
+        <tr><th scope="row"><kbd>/</kbd></th><td>光标进搜索框</td></tr>
+        <tr><th scope="row"><kbd>Enter</kbd></th><td>页码框里回车 = 跳页</td></tr>
+        <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></th><td>保存正在写的笔记</td></tr>
+        <tr><th scope="row"><kbd>Esc</kbd></th><td>取消编辑中的笔记</td></tr>
       </tbody>
     </table>
   </div>
@@ -597,9 +617,10 @@ footer a{color:hsl(var(--c-accent))}
     <h2>常见问题</h2>
     <dl class="faq">
       <dt>数据存在哪儿？</dt>
-      <dd>只有一个 SQLite 文件：<code>%APPDATA%\recorder\recorder.db</code>。
-         它放在自己的应用数据目录里，不在程序旁边，所以卸载或移动程序都不会碰到它，
-         你也可以直接拷走这个文件当备份。</dd>
+      <dd>设计上只有一个 SQLite 文件：<code>%APPDATA%\recorder\recorder.db</code>。
+         它会放在自己的应用数据目录里，不在程序旁边，所以卸载或移动程序都不会碰到它，
+         你也可以直接拷走这个文件当备份。
+         提醒一句：现在还没有代码会去创建这个文件，所以你现在跑起来是看不到它的。</dd>
 
       <dt>资料目录被挪走、或者拔了移动硬盘，会怎样？</dt>
       <dd>不会丢数据也不会崩。已经记录的进度和笔记都还在，程序会提示你重新选一个目录。
@@ -630,24 +651,24 @@ footer a{color:hsl(var(--c-accent))}
   var btn = document.getElementById('dl');
   var ver = document.getElementById('ver');
   var RELEASES = 'https://github.com/skyarea/recorder/releases';
-  var REPO = 'https://github.com/skyarea/recorder';
 
-  // HTML 的初始状态已经是「未发布」那一档，所以这里只需要在
-  // 「确有 release」时把它升级；未发布/挂住/失败都维持 HTML 写好的状态。
-  function unreleased() {
-    ver.dataset.state = 'unreleased';
-  }
+  // HTML 里写好的初始状态就是「未发布」那一档，所以 JS 唯一的职责是：
+  // 发现确有 release 时把它升级成真正的下载态。未发布 / 挂住 / 失败
+  // 全都维持 HTML 已经写好的实情，不需要再刷一遍。
+  function unreleased() { /* 已由 HTML 表达 */ }
 
   function released(exeUrl, tag, when) {
     // 有 release 但没有 exe 资产时，退回 releases 页而不是给一个死链
     btn.href = exeUrl || RELEASES;
     btn.textContent = exeUrl ? '下载最新版' : '到 Releases 页下载';
     ver.textContent = '最新版本 ' + (tag || '') + ' · ' + when + ' 发布';
-    ver.dataset.state = 'released';
   }
 
   function fmt(d) {
-    try { return new Date(d).toLocaleDateString('zh-CN'); }
+    // 缺 published_at 时 toLocaleDateString 不会抛错，会安静地产出 "Invalid Date"
+    var t = new Date(d).getTime();
+    if (!t) return '';
+    try { return new Date(t).toLocaleDateString('zh-CN'); }
     catch (e) { return ''; }
   }
 
