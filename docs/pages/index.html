@@ -317,6 +317,73 @@ a.btn.ghost{
 
 .req code{font-weight:var(--fw-normal)}
 
+/* ==========================================================================
+   快捷键表
+   ========================================================================== */
+.keys{
+  width:100%;
+  border-collapse:collapse;
+  font-size:var(--fs-sm);
+}
+
+.keys caption{
+  text-align:left;
+  font-size:var(--fs-sm);
+  color:hsl(var(--c-fg-muted));
+  padding-bottom:var(--sp-4);
+}
+
+.keys th,.keys td{
+  padding:var(--sp-3) var(--sp-2);
+  border-bottom:1px solid hsl(var(--c-border));
+  text-align:left;
+  vertical-align:top;
+}
+
+.keys tr:last-child th,.keys tr:last-child td{border-bottom:none}
+
+.keys th{width:34%;font-weight:var(--fw-normal);white-space:nowrap}
+
+.keys kbd{
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.85em;
+  background:hsl(var(--c-bg));
+  border:1px solid hsl(var(--c-border));
+  border-bottom-width:2px;
+  border-radius:var(--r-sm);
+  padding:2px var(--sp-2);
+  margin:0 1px;
+}
+
+.keys td{color:hsl(var(--c-fg-muted))}
+
+@media (max-width:560px){
+  .keys th{width:auto}
+  .keys th,.keys td{display:block;border-bottom:none;padding:var(--sp-2) 0}
+  .keys tr{border-bottom:1px solid hsl(var(--c-border));display:block;padding:var(--sp-2) 0}
+  .keys tr:last-child{border-bottom:none}
+}
+
+/* ==========================================================================
+   FAQ
+   ========================================================================== */
+.faq{margin:0}
+
+.faq dt{
+  font-weight:var(--fw-semibold);
+  margin:var(--sp-5) 0 0;
+  scroll-margin-top:var(--sp-6);
+}
+
+.faq dt:first-child{margin-top:0}
+
+.faq dd{
+  margin:var(--sp-2) 0 0;
+  font-size:var(--fs-sm);
+  color:hsl(var(--c-fg-muted));
+  max-width:74ch;
+}
+
 ul{
   margin:0;
   padding-left:var(--sp-6);
@@ -325,6 +392,76 @@ ul{
 li{
   margin:var(--sp-2) 0;
 }
+
+/* ==========================================================================
+   功能网格
+   --------------------------------------------------------------------------
+   每张卡 = 标题 + 一行说明 + 状态标记。卡片用 card 表面，落在 quiet 区块
+   （muted 表面）上，层次由明度差给出，不靠再加一层描边。
+
+   状态标记只有两种颜色：强调色实底 = 已经在跑，描边幽灵 = 计划中。
+   不引入第三个色相 —— 全页只允许一个强调色。
+   ========================================================================== */
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+  gap:var(--sp-5);
+  list-style:none;
+  margin:0;
+  padding:0;
+}
+
+.grid + .grid{margin-top:var(--sp-5)}
+
+.feat{
+  background:hsl(var(--c-card));
+  border:1px solid hsl(var(--c-border));
+  border-radius:var(--r-md);
+  padding:var(--sp-5);
+}
+
+.feat h3{
+  font-size:var(--fs-base);
+  line-height:var(--lh-snug);
+  font-weight:var(--fw-semibold);
+  margin:0 0 var(--sp-2);
+  display:flex;
+  align-items:baseline;
+  gap:var(--sp-3);
+}
+
+.feat p{
+  margin:0;
+  font-size:var(--fs-sm);
+  color:hsl(var(--c-fg-muted));
+}
+
+.pill{
+  font-size:var(--fs-sm);
+  font-weight:var(--fw-medium);
+  padding:2px var(--sp-2);
+  border-radius:99px;
+  white-space:nowrap;
+  flex:0 0 auto;
+}
+
+.pill.done{
+  background:hsl(var(--c-accent));
+  color:hsl(var(--c-on-accent));
+}
+
+.pill.todo{
+  color:hsl(var(--c-fg-muted));
+  border:1px solid hsl(var(--c-border));
+}
+
+.group-note{
+  font-size:var(--fs-sm);
+  color:hsl(var(--c-fg-muted));
+  margin:0 0 var(--sp-4);
+}
+
+.group-note + .grid{margin-bottom:var(--sp-7)}
 
 code{
   background:hsl(var(--c-bg));
@@ -341,6 +478,10 @@ footer{
   text-align:center;
 }
 
+footer p{margin:0 0 var(--sp-3)}
+
+footer p:last-child{margin-bottom:0}
+
 footer a{color:hsl(var(--c-accent))}
 
 @media (max-width:640px){
@@ -356,11 +497,16 @@ footer a{color:hsl(var(--c-accent))}
   <h1>recorder</h1>
   <p class="lede">本地优先的 Windows PDF 阅读器 —— 阅读进度、笔记与标注，数据都存在你自己的电脑上。</p>
 
+  <!--
+    HTML 里的默认状态就是「还没发布」那一档，而不是「正在读取」。
+    这样禁用 JS 的人看到的是实情，不至于停在一句永远的「正在读取…」上；
+    JS 跑起来发现有 release，再把它升级成真正的下载态。
+  -->
   <div class="cta hero-cta">
-    <a class="btn" id="dl" href="https://github.com/skyarea/recorder/releases/latest">下载最新版</a>
+    <a class="btn" id="dl" href="https://github.com/skyarea/recorder">开发中 · 看源码</a>
     <a class="btn ghost" href="#features">看看功能</a>
   </div>
-  <p class="meta" id="ver" aria-live="polite">正在读取最新版本…</p>
+  <p class="meta" id="ver" aria-live="polite">还没有正式版 —— 首批构建正在做，先在源码里看进展</p>
 
   <figure class="preview">
     <img src="app-preview.svg"
@@ -383,19 +529,95 @@ footer a{color:hsl(var(--c-accent))}
 
   <div class="band quiet" id="features">
     <h2>功能</h2>
-    <ul>
-      <li>目录树扫描 + 阅读状态 / 进度 / 星标</li>
-      <li>划词高亮、自由画线、矩形框选三种标注</li>
-      <li>手写笔记（Markdown），可与标注双向互链、一键跳回 PDF 位置</li>
-      <li>JSON 导出 / 导入备份，兼容旧版格式</li>
-      <li>深色 / 浅色主题，快捷键 J / K / 1-4 / S / /</li>
-      <li>无网络依赖、无账号：文档与笔记只落在本机 <code>%APPDATA%\recorder\</code></li>
+    <p class="group-note">下面分成两组：底层那几个 Go 包已经写好并有单元测试，窗口骨架也已经能开出来
+       （里面目前只是一页占位文字）。标了色的小圆片是「已经在跑」的，描边的那种是「计划中」。</p>
+
+    <ul class="grid">
+      <li class="feat">
+        <h3>数据层 <span class="pill done">已就绪</span></h3>
+        <p>进度、状态、星标、笔记、标注都存在一个 SQLite 文件里，不删浏览器缓存就丢。</p>
+      </li>
+      <li class="feat">
+        <h3>目录扫描 <span class="pill done">已就绪</span></h3>
+        <p>指定一个根目录，递归列出里面所有 PDF；路径按相对路径记，换机器也能对上。</p>
+      </li>
+      <li class="feat">
+        <h3>备份 / 迁移 <span class="pill done">已就绪</span></h3>
+        <p>导出 JSON 备份，格式和旧版网页应用通用 —— 旧版导出的能直接导进来。</p>
+      </li>
+    </ul>
+
+    <p class="group-note">界面层还在盖，下面这些都还不能用：</p>
+
+    <ul class="grid">
+      <li class="feat">
+        <h3>阅读状态与进度 <span class="pill todo">计划中</span></h3>
+        <p>待读 / 在读 / 已读 / 跳过四态，翻页自动记进度，星标收藏。</p>
+      </li>
+      <li class="feat">
+        <h3>三种标注 <span class="pill todo">计划中</span></h3>
+        <p>划词高亮、自由画线、矩形框选，标注跟着页面缩放不跑位。</p>
+      </li>
+      <li class="feat">
+        <h3>手写笔记 <span class="pill todo">计划中</span></h3>
+        <p>笔记永远由你自己写，支持 Markdown，可以直接挂到标注上。</p>
+      </li>
+      <li class="feat">
+        <h3>统计与搜索 <span class="pill todo">计划中</span></h3>
+        <p>按状态统计，全文搜索笔记内容。</p>
+      </li>
+      <li class="feat">
+        <h3>深色 / 浅色 <span class="pill todo">计划中</span></h3>
+        <p>跟随系统，一套快捷键走完全部操作。</p>
+      </li>
+      <li class="feat">
+        <h3>阅读体验 <span class="pill todo">计划中</span></h3>
+        <p>基于 pdf.js 官方阅读器：查找、打印、缩略图、大纲、缩放都在。</p>
+      </li>
     </ul>
   </div>
 
+  <div class="band" id="shortcuts">
+    <h2>快捷键</h2>
+    <table class="keys">
+      <caption>计划形态，界面做好之后生效。沿用参考实现的键位。</caption>
+      <tbody>
+        <tr><th><kbd>J</kbd> / <kbd>K</kbd>（或 <kbd>↓</kbd> <kbd>↑</kbd>）</th><td>跳到列表里下一个 / 上一个文件</td></tr>
+        <tr><th><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></th><td>设为待读 / 在读 / 已读 / 跳过</td></tr>
+        <tr><th><kbd>S</kbd></th><td>切换星标</td></tr>
+        <tr><th><kbd>/</kbd></th><td>光标进搜索框</td></tr>
+        <tr><th><kbd>Enter</kbd></th><td>页码框里回车 = 跳页</td></tr>
+        <tr><th><kbd>Ctrl</kbd>+<kbd>Enter</kbd></th><td>保存正在写的笔记</td></tr>
+        <tr><th><kbd>Esc</kbd></th><td>取消编辑中的笔记</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="band quiet" id="faq">
+    <h2>常见问题</h2>
+    <dl class="faq">
+      <dt>数据存在哪儿？</dt>
+      <dd>只有一个 SQLite 文件：<code>%APPDATA%\recorder\recorder.db</code>。
+         它放在自己的应用数据目录里，不在程序旁边，所以卸载或移动程序都不会碰到它，
+         你也可以直接拷走这个文件当备份。</dd>
+
+      <dt>资料目录被挪走、或者拔了移动硬盘，会怎样？</dt>
+      <dd>不会丢数据也不会崩。已经记录的进度和笔记都还在，程序会提示你重新选一个目录。
+         这是设计上的一条硬要求：目录失效时第一件事是保住已写的东西。</dd>
+
+      <dt>需要联网吗？要有账号吗？</dt>
+      <dd>都不需要。没有账号、没有云同步、没有遥测。程序运行起来之后完全不碰网络 ——
+         它只读你本机的 PDF 和写你本机的那个数据库文件。</dd>
+    </dl>
+  </div>
+
   <footer>
-    <a href="https://github.com/skyarea/recorder">源码</a> ·
-    <a href="https://github.com/skyarea/recorder/issues">反馈问题</a>
+    <p>早期项目 —— 还没有能下载的程序。想跟着看进展的话，<a href="https://github.com/skyarea/recorder/issues">Issues</a> 是最新的地方。</p>
+    <p>
+      <a href="https://github.com/skyarea/recorder">源码</a> ·
+      <a href="https://github.com/skyarea/recorder/issues">反馈问题</a> ·
+      <a href="https://github.com/skyarea/recorder/blob/main/docs/superpowers/specs/2026-10-13-pdf-reader-desktop-design.md">设计文档</a>
+    </p>
   </footer>
 </main>
 
@@ -410,11 +632,9 @@ footer a{color:hsl(var(--c-accent))}
   var RELEASES = 'https://github.com/skyarea/recorder/releases';
   var REPO = 'https://github.com/skyarea/recorder';
 
-  // 默认态：无 JS / 请求挂住时也不留一个坏按钮。这里的 href 已经是可用的。
+  // HTML 的初始状态已经是「未发布」那一档，所以这里只需要在
+  // 「确有 release」时把它升级；未发布/挂住/失败都维持 HTML 写好的状态。
   function unreleased() {
-    btn.textContent = '开发中 · 看源码';
-    btn.href = REPO;
-    ver.textContent = '还没有正式版 —— 首批构建正在做，先在源码里看进展';
     ver.dataset.state = 'unreleased';
   }
 
