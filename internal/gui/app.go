@@ -1,34 +1,33 @@
 // Package gui holds the Wails v3 application: the window and everything
-// hung off it. Later tasks add storage, an HTTP API and the pdf.js viewer
-// behind the URL this package loads.
+// hung off it. The HTTP API lives in internal/app; this package only
+// points a window at its address and lends the window's native dialogs
+// to the service layer.
 package gui
 
 import (
-	"io/fs"
-	"net/http"
-
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// Run starts the Wails v3 app: one main window, opening on the embedded
-// frontend served at the root. It blocks until the app quits and returns
-// any error from the run.
-func Run(frontend fs.FS) error {
-	assets, err := fs.Sub(frontend, "frontend")
-	if err != nil {
-		return err
-	}
-
+// Run starts the Wails v3 app with one main window loading url (the
+// loopback HTTP address of the app service). onAppReady receives the
+// created application before the loop starts, to wire native dialogs.
+// Run blocks until the app quits and returns any error from the run.
+func Run(url string, onAppReady func(*application.App) error) error {
 	app := application.New(application.Options{
 		Name:        "recorder",
 		Description: "PDF 阅读进度 · 笔记",
-		Assets:      application.AssetOptions{Handler: http.FileServer(http.FS(assets))},
 	})
+
+	if onAppReady != nil {
+		if err := onAppReady(app); err != nil {
+			return err
+		}
+	}
 
 	mainWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:   "main",
 		Title:  "PDF 阅读进度 · 笔记",
-		URL:    "/",
+		URL:    url,
 		Width:  1280,
 		Height: 860,
 	})
