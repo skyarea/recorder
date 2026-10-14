@@ -1,0 +1,263 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 750" width="1200" height="750"
+     preserveAspectRatio="xMidYMid meet" role="img"
+     aria-labelledby="apv-title apv-desc">
+  <title id="apv-title">recorder 应用主界面示意</title>
+  <desc id="apv-desc">左侧是可展开的 PDF 目录树，用颜色点区分未读、在读、已读、跳过四种状态；
+    中间是 PDF 阅读区，页面上有划词高亮、矩形框选和自由画线三种标注；
+    右侧是笔记面板，笔记上带标注徽标，点一下可以跳回 PDF 里对应的位置。</desc>
+
+  <!--
+    配色来源：docs/pages/index.html 的 :root 令牌。
+    SVG 被 <img> 引用或从 README 相对路径引用时是一个独立文档，读不到页面的
+    CSS 变量，所以这里必须自带一份。改 index.html 的色板时，这份要同步。
+
+    刻意没有背景矩形：让 SVG 落在落地页区块的底色上，而不是自带一块白底。
+    PDF 页面在两种模式下都保持纸色 —— 真实阅读器里文档内容不随主题变。
+  -->
+  <style>
+    text{font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+
+    .frame    {fill:#e1dad0; stroke:#d5cec3}
+    .chrome   {fill:#e4dfd7; stroke:#d5cec3}
+    .surface  {fill:#eeeae2; stroke:#d5cec3}
+    .paper    {fill:#ffffff; stroke:#d5cec3}
+    .line     {fill:#d5cec3; stroke:none}
+    /* 分隔线用 stroke 画，.line 是 fill，二者不能混用 */
+    .rule     {stroke:#d5cec3; fill:none}
+    .t1       {fill:#2c2621}
+    .t2       {fill:#574d42}
+    .t3       {fill:#8a7f72}
+    .accent   {fill:#a04122}
+    .accent-t {fill:#f8f6f2}
+    .star     {fill:#d9a441}
+
+    @media (prefers-color-scheme: dark){
+      .frame    {fill:#332f28; stroke:#4f4940}
+      .chrome   {fill:#3e3a32; stroke:#4f4940}
+      .surface  {fill:#23201a; stroke:#4f4940}
+      .paper    {fill:#e8e4dc; stroke:#4f4940}
+      .line     {fill:#4f4940; stroke:none}
+      .rule     {stroke:#4f4940; fill:none}
+      .t1       {fill:#e7e1da}
+      .t2       {fill:#b5aa9b}
+      .t3       {fill:#8d8172}
+      .accent   {fill:#e29378}
+      .accent-t {fill:#2c2621}
+      .star     {fill:#e8b45c}
+    }
+  </style>
+
+  <!-- ================= 窗口 ================= -->
+  <rect class="frame" x="1" y="1" width="1198" height="748" rx="14"/>
+
+  <!-- ================= 顶栏 ================= -->
+  <path class="chrome" d="M1 15 A14 14 0 0 1 15 1 h1170 a14 14 0 0 1 14 14 v37 H1 z"/>
+  <line class="rule" x1="1" y1="51" x2="1199" y2="51" stroke-width="1"/>
+
+  <!-- 选择资料文件夹 -->
+  <rect class="accent" x="20" y="11" width="132" height="29" rx="7"/>
+  <text class="accent-t" x="86" y="30" font-size="13" text-anchor="middle">选择资料文件夹</text>
+
+  <!-- 根目录名 -->
+  <text class="t1" x="166" y="30" font-size="13" font-weight="600">参考资料</text>
+
+  <!-- 状态统计 chips -->
+  <g font-size="12">
+    <circle cx="252" cy="25" r="4" fill="#94a3b8"/><text class="t2" x="262" y="29">12</text>
+    <circle cx="292" cy="25" r="4" fill="#3b82f6"/><text class="t2" x="302" y="29">3</text>
+    <circle cx="330" cy="25" r="4" fill="#22c55e"/><text class="t2" x="340" y="29">48</text>
+    <circle cx="372" cy="25" r="4" fill="#d6d3d1"/><text class="t2" x="382" y="29">5</text>
+  </g>
+
+  <!-- 搜索框 -->
+  <rect class="surface" x="856" y="11" width="216" height="29" rx="7"/>
+  <circle cx="874" cy="25" r="5" fill="none" stroke="#8a7f72" stroke-width="1.4"/>
+  <line x1="878" y1="29" x2="882" y2="33" stroke="#8a7f72" stroke-width="1.4"/>
+  <text class="t3" x="890" y="29" font-size="12">搜索文件 / 笔记…</text>
+
+  <!-- 导出 / 导入 -->
+  <rect class="surface" x="1084" y="11" width="48" height="29" rx="7"/>
+  <text class="t2" x="1108" y="29" font-size="12" text-anchor="middle">导出</text>
+  <rect class="surface" x="1140" y="11" width="48" height="29" rx="7"/>
+  <text class="t2" x="1164" y="29" font-size="12" text-anchor="middle">导入</text>
+
+  <!-- ================= 左侧：目录树 ================= -->
+  <rect class="surface" x="1" y="52" width="252" height="697"/>
+  <line class="rule" x1="253" y1="52" x2="253" y2="749" stroke-width="1"/>
+
+  <text class="t3" x="20" y="74" font-size="11" letter-spacing="0.08em">资料</text>
+
+  <!-- 折叠的根目录 -->
+  <path d="M22 88 l6 5 -6 5" fill="none" stroke="#8a7f72" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M34 89 h9 v10 h-9 z" fill="none" stroke="#8a7f72" stroke-width="1.5"/>
+  <text class="t1" x="50" y="98" font-size="12.5" font-weight="600">前端</text>
+
+  <!-- 文件名 + 状态点。状态色沿用参考实现，不随主题变（状态是语义色） -->
+  <g font-size="12.5">
+    <path d="M32 112 l6 5 -6 5" fill="none" stroke="#8a7f72" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M44 113 h9 v10 h-9 z" fill="none" stroke="#8a7f72" stroke-width="1.5"/>
+    <text class="t1" x="60" y="122">react.pdf</text>
+    <circle cx="228" cy="118" r="3.5" fill="#3b82f6"/>
+
+    <path d="M32 136 l6 5 -6 5" fill="none" stroke="#8a7f72" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M44 137 h9 v10 h-9 z" fill="none" stroke="#8a7f72" stroke-width="1.5"/>
+    <text class="t1" x="60" y="146">wails-v3.pdf</text>
+    <circle cx="228" cy="142" r="3.5" fill="#22c55e"/>
+
+    <path d="M32 160 l6 5 -6 5" fill="none" stroke="#8a7f72" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M44 161 h9 v10 h-9 z" fill="none" stroke="#8a7f72" stroke-width="1.5"/>
+    <text class="t1" x="60" y="170">sqlite.pdf</text>
+    <circle cx="228" cy="166" r="3.5" fill="#94a3b8"/>
+
+    <!-- 当前选中项 -->
+    <rect class="accent" x="24" y="172" width="213" height="24" rx="6" opacity="0.14"/>
+    <path d="M44 177 h9 v10 h-9 z" fill="none" stroke="#8a7f72" stroke-width="1.5"/>
+    <text class="accent" x="60" y="186" font-weight="600">typescript.pdf</text>
+    <circle cx="228" cy="182" r="3.5" fill="#3b82f6"/>
+    <path class="star" d="M206 178 l2.2 4.6 5 .7 -3.6 3.5 .8 5 -4.4-2.4 -4.4 2.4 .8-5 -3.6-3.5 5-.7 z"/>
+
+    <path d="M32 208 l6 5 -6 5" fill="none" stroke="#8a7f72" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M44 209 h9 v10 h-9 z" fill="none" stroke="#8a7f72" stroke-width="1.5"/>
+    <text class="t1" x="60" y="218">pdfjs.pdf</text>
+    <circle cx="228" cy="214" r="3.5" fill="#d6d3d1"/>
+
+    <path d="M32 232 l6 5 -6 5" fill="none" stroke="#8a7f72" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M44 233 h9 v10 h-9 z" fill="none" stroke="#8a7f72" stroke-width="1.5"/>
+    <text class="t1" x="60" y="242">design.pdf</text>
+    <circle cx="228" cy="238" r="3.5" fill="#22c55e"/>
+  </g>
+
+  <!-- 另一个分组 -->
+  <path d="M22 276 l6 5 -6 5" fill="none" stroke="#8a7f72" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M34 277 h9 v10 h-9 z" fill="none" stroke="#8a7f72" stroke-width="1.5"/>
+  <text class="t1" x="50" y="286" font-size="12.5" font-weight="600">后端</text>
+
+  <g font-size="12.5">
+    <path d="M44 301 h9 v10 h-9 z" fill="none" stroke="#8a7f72" stroke-width="1.5"/>
+    <text class="t1" x="60" y="310">storage.pdf</text>
+    <circle cx="228" cy="306" r="3.5" fill="#22c55e"/>
+
+    <path d="M44 325 h9 v10 h-9 z" fill="none" stroke="#8a7f72" stroke-width="1.5"/>
+    <text class="t1" x="60" y="334">http.pdf</text>
+    <circle cx="228" cy="330" r="3.5" fill="#94a3b8"/>
+
+    <path d="M44 349 h9 v10 h-9 z" fill="none" stroke="#8a7f72" stroke-width="1.5"/>
+    <text class="t1" x="60" y="358">scan.pdf</text>
+    <circle cx="228" cy="354" r="3.5" fill="#3b82f6"/>
+  </g>
+
+  <!-- ================= 中间：阅读区 ================= -->
+  <!-- 阅读器工具条 -->
+  <rect class="chrome" x="254" y="52" width="498" height="40"/>
+  <line class="rule" x1="254" y1="92" x2="752" y2="92" stroke-width="1"/>
+
+  <!-- 标注工具：划词 / 画线 / 框选 / 删除。当前激活的是划词 -->
+  <g>
+    <rect class="accent" x="266" y="62" width="30" height="21" rx="5"/>
+    <rect x="264" y="73" width="22" height="5" rx="2.5" fill="#f8f6f2" opacity="0.95"/>
+    <text class="accent-t" x="281" y="76.5" font-size="10" text-anchor="middle">词</text>
+
+    <rect class="surface" x="302" y="62" width="30" height="21" rx="5"/>
+    <path d="M309 77 l4-9 5 6 4-8" fill="none" stroke="#8a7f72" stroke-width="1.6" stroke-linecap="round"/>
+
+    <rect class="surface" x="338" y="62" width="30" height="21" rx="5"/>
+    <rect x="347" y="66" width="12" height="11" fill="none" stroke="#8a7f72" stroke-width="1.6"/>
+
+    <rect class="surface" x="374" y="62" width="30" height="21" rx="5"/>
+    <path d="M382 70 l10 10 M392 70 l-10 10" stroke="#8a7f72" stroke-width="1.6" stroke-linecap="round"/>
+
+    <text class="t3" x="418" y="77" font-size="11">第 7 页 / 共 42 页</text>
+
+    <!-- 缩放 -->
+    <circle cx="676" cy="72" r="6" fill="none" stroke="#8a7f72" stroke-width="1.4"/>
+    <path d="M676 69 v6 M673 72 h6" stroke="#8a7f72" stroke-width="1.2" stroke-linecap="round"/>
+    <text class="t3" x="740" y="77" font-size="11" text-anchor="end">68%</text>
+  </g>
+
+  <!-- PDF 纸面 -->
+  <rect class="paper" x="316" y="112" width="376" height="560" rx="3"/>
+  <text class="t1" x="344" y="152" font-size="15" font-weight="600">第三章 数据存储</text>
+
+  <g class="line">
+    <rect x="344" y="176" width="324" height="6" rx="3"/>
+    <rect x="344" y="196" width="304" height="6" rx="3"/>
+    <rect x="344" y="216" width="324" height="6" rx="3"/>
+    <rect x="344" y="236" width="212" height="6" rx="3"/>
+  </g>
+
+  <!-- 划词高亮：两行相邻的选中文本 -->
+  <rect x="344" y="264" width="324" height="20" rx="3" fill="#f0b429" opacity="0.42"/>
+  <rect x="344" y="288" width="196" height="20" rx="3" fill="#f0b429" opacity="0.42"/>
+  <text class="t1" x="348" y="278" font-size="11">SQLite 表结构由 storage 包负责创建，</text>
+  <text class="t1" x="348" y="302" font-size="11">采用 page 字段钳制策略。</text>
+
+  <g class="line">
+    <rect x="344" y="326" width="324" height="6" rx="3"/>
+    <rect x="344" y="346" width="264" height="6" rx="3"/>
+    <rect x="344" y="366" width="324" height="6" rx="3"/>
+  </g>
+
+  <!-- 矩形框选 -->
+  <rect x="344" y="390" width="150" height="74" rx="2" fill="none" stroke="#d45d35" stroke-width="2"/>
+  <text class="t3" x="350" y="408" font-size="10">图 3-1 表关系</text>
+
+  <!-- 自由画线 -->
+  <path d="M356 496 c22-12 34 10 52-2 c16-10 30 8 46-4 c14-10 26 6 40-2"
+        fill="none" stroke="#3b82f6" stroke-width="2.4" stroke-linecap="round"/>
+
+  <g class="line">
+    <rect x="344" y="522" width="324" height="6" rx="3"/>
+    <rect x="344" y="542" width="288" height="6" rx="3"/>
+    <rect x="344" y="562" width="324" height="6" rx="3"/>
+    <rect x="344" y="582" width="148" height="6" rx="3"/>
+  </g>
+
+  <!-- 当前页高亮：右侧页码条 -->
+  <rect x="700" y="150" width="22" height="24" rx="3" fill="#a04122" opacity="0.16"/>
+  <text class="accent" x="711" y="166" font-size="10" text-anchor="middle">7</text>
+  <g class="line">
+    <rect x="700" y="180" width="22" height="18" rx="2"/>
+    <rect x="700" y="204" width="22" height="18" rx="2"/>
+    <rect x="700" y="228" width="22" height="18" rx="2"/>
+    <rect x="700" y="252" width="22" height="18" rx="2"/>
+    <rect x="700" y="276" width="22" height="18" rx="2"/>
+    <rect x="700" y="300" width="22" height="18" rx="2"/>
+  </g>
+
+  <!-- ================= 右侧：笔记面板 ================= -->
+  <rect class="surface" x="753" y="52" width="446" height="697"/>
+  <line class="rule" x1="752" y1="52" x2="752" y2="749" stroke-width="1"/>
+
+  <text class="t1" x="776" y="76" font-size="14" font-weight="600">笔记</text>
+  <text class="t3" x="1160" y="76" font-size="11" text-anchor="end">支持 Markdown</text>
+
+  <!-- 一条已有笔记：正文 + 标注徽标 -->
+  <rect class="chrome" x="772" y="94" width="408" height="96" rx="8"/>
+  <text class="t2" x="788" y="118" font-size="11">第 7 页 · 今天</text>
+  <text class="t1" x="788" y="140" font-size="12.5">storage 初始化时要把 busy_timeout</text>
+  <text class="t1" x="788" y="158" font-size="12.5">设上，否则并发写会直接失败。</text>
+  <!-- 标注徽标：两个标注 -->
+  <rect x="788" y="168" width="46" height="16" rx="8" fill="#a04122" opacity="0.16"/>
+  <text class="accent" x="811" y="179.5" font-size="10" text-anchor="middle">2 标注</text>
+
+  <!-- 另一条笔记，无标注 -->
+  <rect class="chrome" x="772" y="202" width="408" height="76" rx="8"/>
+  <text class="t2" x="788" y="226" font-size="11">第 12 页 · 昨天</text>
+  <text class="t1" x="788" y="248" font-size="12.5">http.ServeContent 自带 Range，</text>
+  <text class="t1" x="788" y="266" font-size="12.5">不用自己实现 206。</text>
+
+  <!-- 新建笔记输入框 -->
+  <rect class="surface" x="772" y="290" width="408" height="118" rx="8"/>
+  <line class="rule" x1="772" y1="290" x2="1180" y2="290" stroke-width="1"/>
+  <text class="t3" x="788" y="316" font-size="12">写点什么…（Ctrl+Enter 保存）</text>
+  <rect class="line" x="788" y="330" width="200" height="6" rx="3"/>
+  <rect class="line" x="788" y="348" width="248" height="6" rx="3"/>
+  <rect class="accent" x="1046" y="378" width="86" height="22" rx="6"/>
+  <text class="accent-t" x="1089" y="393" font-size="11" text-anchor="middle">保存笔记</text>
+
+  <!-- 提示条：关联入口 -->
+  <rect class="surface" x="772" y="420" width="408" height="34" rx="8"/>
+  <circle cx="790" cy="437" r="6" fill="none" stroke="#a04122" stroke-width="1.6"/>
+  <path d="M787 437 h6 M790 434 v6" stroke="#a04122" stroke-width="1.6" stroke-linecap="round"/>
+  <text class="t2" x="806" y="441" font-size="11.5">给这条笔记挂上刚划的那个标注 →</text>
+</svg>

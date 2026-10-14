@@ -180,6 +180,35 @@ h2{
 }
 
 /* ==========================================================================
+   预览图
+   --------------------------------------------------------------------------
+   图是独立的 .svg 文件，经 <img> 渲染。SVG 在自己的文档里带一套
+   prefers-color-scheme，深浅两种模式各自适配 —— 不需要页面替它操心，
+   也不会出现「深色页面上贴一张白底图」。
+
+   img 上的 width/height 属性就是纵横比来源，加载时不会跳动；
+   样式只管宽度与间距，不给图套底色或边框：窗口外框 SVG 自己画了。
+   ========================================================================== */
+.preview{
+  margin:0 0 var(--sp-6);
+}
+
+.preview img{
+  display:block;
+  width:100%;
+  height:auto;
+}
+
+.preview figcaption{
+  color:hsl(var(--c-fg-muted));
+  font-size:var(--fs-sm);
+  margin:var(--sp-3) var(--sp-1) 0;
+  text-align:center;
+  max-width:70ch;
+  margin-inline:auto;
+}
+
+/* ==========================================================================
    分区
    --------------------------------------------------------------------------
    区块背景在 background 与 muted 之间交替，给页面横向节奏。
@@ -270,6 +299,7 @@ footer a{color:hsl(var(--c-accent))}
 @media (max-width:640px){
   main{padding:var(--sp-9) var(--sp-6) var(--sp-10)}
   .band{padding:var(--sp-7)}
+  .preview{margin-inline:calc(var(--sp-6) * -1); border-radius:0}
 }
 </style>
 </head>
@@ -278,6 +308,13 @@ footer a{color:hsl(var(--c-accent))}
   <p class="eyebrow">本地优先 · 单文件 exe</p>
   <h1>recorder</h1>
   <p class="lede">本地优先的 Windows PDF 阅读器 —— 阅读进度、笔记与标注，数据都存在你自己的电脑上。</p>
+
+  <figure class="preview">
+    <img src="app-preview.svg"
+         alt="recorder 主界面：左侧是标着阅读状态的 PDF 目录树，中间是 PDF 页面，上面有划词高亮、矩形框选和自由画线三种标注，右侧是带标注徽标的笔记面板。"
+         width="1200" height="750" loading="eager" decoding="async">
+    <figcaption>界面示意。三种标注工具在阅读器工具条上，写完笔记可以直接挂到标注上。</figcaption>
+  </figure>
 
   <div class="band">
     <h2>下载</h2>
