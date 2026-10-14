@@ -661,7 +661,10 @@ footer a{color:hsl(var(--c-accent))}
     // 有 release 但没有 exe 资产时，退回 releases 页而不是给一个死链
     btn.href = exeUrl || RELEASES;
     btn.textContent = exeUrl ? '下载最新版' : '到 Releases 页下载';
-    ver.textContent = '最新版本 ' + (tag || '') + ' · ' + when + ' 发布';
+    // 拿不到 published_at 时不要留下「·  发布」这种空壳
+    ver.textContent = when
+      ? '最新版本 ' + (tag || '') + ' · ' + when + ' 发布'
+      : '最新版本 ' + (tag || '');
   }
 
   function fmt(d) {
