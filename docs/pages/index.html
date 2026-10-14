@@ -130,6 +130,18 @@
    ========================================================================== */
 *{box-sizing:border-box}
 
+html{
+  /* 「看看功能」是页内锚点，给一点平滑滚动 */
+  scroll-behavior:smooth;
+}
+
+/* 锚点跳转时给目标留出呼吸空间 */
+[id]{scroll-margin-top:var(--sp-6)}
+
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+}
+
 body{
   margin:0;
   background:hsl(var(--c-bg));
@@ -219,6 +231,7 @@ h2{
   background:hsl(var(--c-card));
   border:1px solid hsl(var(--c-border));
   border-radius:var(--r-lg);
+  box-shadow:var(--sh-1);
   padding:var(--sp-9);
   margin:0 0 var(--sp-6);
 }
@@ -236,7 +249,16 @@ h2{
   gap:var(--sp-4);
   flex-wrap:wrap;
   align-items:center;
-  margin-bottom:var(--sp-4);
+}
+
+/* 首屏 CTA：稍微加大，让「下载」这件事在第一眼就有分量 */
+.hero-cta{
+  margin:0 0 var(--sp-3);
+}
+
+.hero-cta a.btn{
+  padding:var(--sp-4) var(--sp-8);
+  font-size:var(--fs-md);
 }
 
 a.btn{
@@ -269,6 +291,31 @@ a.btn.ghost{
   font-size:var(--fs-sm);
   max-width:70ch;
 }
+
+/* 运行要求：四行「项目 / 值」，比一段话好扫读 */
+.req{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:var(--sp-4) var(--sp-7);
+  margin:var(--sp-5) 0 0;
+}
+
+.req div{
+  min-width:0;
+}
+
+.req dt{
+  font-size:var(--fs-sm);
+  color:hsl(var(--c-fg-muted));
+  margin:0 0 var(--sp-1);
+}
+
+.req dd{
+  margin:0;
+  font-weight:var(--fw-medium);
+}
+
+.req code{font-weight:var(--fw-normal)}
 
 ul{
   margin:0;
@@ -309,6 +356,12 @@ footer a{color:hsl(var(--c-accent))}
   <h1>recorder</h1>
   <p class="lede">本地优先的 Windows PDF 阅读器 —— 阅读进度、笔记与标注，数据都存在你自己的电脑上。</p>
 
+  <div class="cta hero-cta">
+    <a class="btn" id="dl" href="https://github.com/skyarea/recorder/releases/latest">下载最新版</a>
+    <a class="btn ghost" href="#features">看看功能</a>
+  </div>
+  <p class="meta" id="ver" aria-live="polite">正在读取最新版本…</p>
+
   <figure class="preview">
     <img src="app-preview.svg"
          alt="recorder 主界面：左侧是标着阅读状态的 PDF 目录树，中间是 PDF 页面，上面有划词高亮、矩形框选和自由画线三种标注，右侧是带标注徽标的笔记面板。"
@@ -316,17 +369,19 @@ footer a{color:hsl(var(--c-accent))}
     <figcaption>界面示意。三种标注工具在阅读器工具条上，写完笔记可以直接挂到标注上。</figcaption>
   </figure>
 
-  <div class="band">
+  <div class="band" id="download">
     <h2>下载</h2>
-    <div class="cta">
-      <a class="btn" id="dl" href="https://github.com/skyarea/recorder/releases/latest">下载最新版</a>
-      <a class="btn ghost" href="https://github.com/skyarea/recorder/releases">全部版本</a>
-    </div>
-    <p class="meta" id="ver">正在读取最新版本…</p>
-    <p class="note">单文件 exe，无需安装：下载后双击即可运行。首次启动会自动扫描你选定的 PDF 目录。</p>
+    <p>单文件 exe，无需安装：下载后双击即可运行。首次启动会请你选一个资料文件夹，之后每次开窗自动重扫。</p>
+    <dl class="req">
+      <div><dt>系统</dt><dd>Windows 10 / 11</dd></div>
+      <div><dt>安装</dt><dd>不需要 —— 单文件，不写注册表</dd></div>
+      <div><dt>账号 / 联网</dt><dd>都不需要，数据只在本机</dd></div>
+      <div><dt>数据位置</dt><dd><code>%APPDATA%\recorder\recorder.db</code></dd></div>
+    </dl>
+    <p class="note">数据是可以直接找到、可以备份的独立文件。要迁移就用「导出 JSON」，备份格式和旧版网页应用通用。</p>
   </div>
 
-  <div class="band quiet">
+  <div class="band quiet" id="features">
     <h2>功能</h2>
     <ul>
       <li>目录树扫描 + 阅读状态 / 进度 / 星标</li>
@@ -345,23 +400,61 @@ footer a{color:hsl(var(--c-accent))}
 </main>
 
 <script>
-// 从 Releases API 读取最新版本号，让页面无需手动更新
-fetch('https://api.github.com/repos/skyarea/recorder/releases/latest')
-  .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
-  .then(function (rel) {
-    var exe = (rel.assets || []).find(function (a) { return /\.exe$/i.test(a.name); });
-    if (exe) {
-      document.getElementById('dl').href = exe.browser_download_url;
-    }
-    var when = new Date(rel.published_at).toLocaleDateString('zh-CN');
-    document.getElementById('ver').textContent =
-      '最新版本 ' + (rel.tag_name || '') + ' · ' + when + ' 发布';
-  })
-  .catch(function () {
-    // 尚未发布任何版本时不要误导用户
-    document.getElementById('ver').textContent =
-      '尚未发布正式版本 —— 开发中，请先查看源码';
-  });
+// 版本状态。三种结局都要读起来是「这个项目现在的样子」，
+// 而不是「页面坏了」—— 未发布和拉不到 API 是同一种对外口径。
+(function () {
+  'use strict';
+
+  var btn = document.getElementById('dl');
+  var ver = document.getElementById('ver');
+  var RELEASES = 'https://github.com/skyarea/recorder/releases';
+  var REPO = 'https://github.com/skyarea/recorder';
+
+  // 默认态：无 JS / 请求挂住时也不留一个坏按钮。这里的 href 已经是可用的。
+  function unreleased() {
+    btn.textContent = '开发中 · 看源码';
+    btn.href = REPO;
+    ver.textContent = '还没有正式版 —— 首批构建正在做，先在源码里看进展';
+    ver.dataset.state = 'unreleased';
+  }
+
+  function released(exeUrl, tag, when) {
+    // 有 release 但没有 exe 资产时，退回 releases 页而不是给一个死链
+    btn.href = exeUrl || RELEASES;
+    btn.textContent = exeUrl ? '下载最新版' : '到 Releases 页下载';
+    ver.textContent = '最新版本 ' + (tag || '') + ' · ' + when + ' 发布';
+    ver.dataset.state = 'released';
+  }
+
+  function fmt(d) {
+    try { return new Date(d).toLocaleDateString('zh-CN'); }
+    catch (e) { return ''; }
+  }
+
+  // 不能无限等：请求挂住会让「正在读取…」永远停在首屏
+  var timer = setTimeout(unreleased, 6000);
+
+  fetch('https://api.github.com/repos/skyarea/recorder/releases/latest')
+    .then(function (r) {
+      // 404 = 仓库还没有任何 release，是正常状态，不是错误
+      if (r.status === 404) return null;
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    })
+    .then(function (rel) {
+      clearTimeout(timer);
+      if (!rel) { unreleased(); return; }
+      var exe = (rel.assets || []).filter(function (a) {
+        return /\.exe$/i.test(a.name);
+      })[0];
+      released(exe ? exe.browser_download_url : null, rel.tag_name, fmt(rel.published_at));
+    })
+    .catch(function () {
+      clearTimeout(timer);
+      // 离线 / 被墙 / 限流：不暴露任何技术细节，口径同未发布
+      unreleased();
+    });
+})();
 </script>
 </body>
 </html>
