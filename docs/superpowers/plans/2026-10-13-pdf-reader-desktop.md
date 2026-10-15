@@ -6,7 +6,7 @@
 
 **Architecture:** Go 后端一个进程内起本地 HTTP 服务（嵌入前端静态资源 + `/api/*` JSON 接口 + `/files/*` PDF 流），Wails v3 开一个窗口加载该地址；前端是无框架的网页应用（由参考实现移植），PDF 阅读用 vendor 进来的 pdf.js 官方 viewer，标注层以 bridge 脚本注入 viewer；数据存 SQLite（`%APPDATA%/recorder/`）。借鉴 magpie（MIT）的"无绑定生成器、无打包器、embed + 自有 HTTP handler"模式。
 
-**Tech Stack:** Go 1.26、Wails v3（`github.com/wailsapp/wails/v3`）、`modernc.org/sqlite`、pdf.js（npm `pdfjs-dist` 的 `web/` 目录）、原生 ES Modules + `node --test`。
+**Tech Stack:** Go 1.26、Wails v3（`github.com/wailsapp/wails/v3`）、`modernc.org/sqlite`、pdf.js **6.4.299**（从 GitHub Release 的官方 dist zip vendored 进 `frontend/vendor/pdfjs/`）、原生 ES Modules + `node --test`。
 
 **Spec:** `docs/superpowers/specs/2026-10-13-pdf-reader-desktop-design.md`
 
@@ -18,9 +18,10 @@
 - 不做 OCR、不做云同步、不做旧版 localStorage 数据迁移（导出/导入 JSON 仅作备份功能）。
 - 单根目录：记住上次扫描目录并启动自动重扫；文件身份为"根目录相对路径、`/` 分隔"。
 - 进度自动跟随滚动记录；页码输入框保留用于跳页。
-- 阅读器基于 `pdfjs-dist/web/viewer` 二次开发，保留其查找/打印/缩略图/大纲/缩放。
+- 阅读器基于 vendored 的 pdf.js 官方 viewer（`frontend/vendor/pdfjs/web/viewer.html`，**原样布局、不改第三方源码**），保留其查找/打印/缩略图/大纲/缩放。
+  > 版本来源更正（#4）：官方 `viewer.html` 只存在于 GitHub Release 的 dist zip，npm 的 `pdfjs-dist` 任何版本（已核实 3.11 / 4.10 / 5.4 / 6.4）都没有它，只有 `PDFViewer` 组件库。所以 Task 9 的「`npm pack pdfjs-dist` 解出 `web/`」是**走不通的路**，已改为从 Release 取、钉 6.4.299。
 - 导出 JSON 必须保持旧格式：`{version:1, rootName, files:{path:{status,page,totalPages,starred,notes:[{id,text,page,ts}],updatedAt}}}`。
-- 每个任务结束必须 `git commit`；Go 测试命令 `go test ./...`，前端纯逻辑测试命令 `node --test frontend/test/`。
+- 每个任务结束必须 `git commit`；Go 测试命令 `go test ./...`，前端纯逻辑测试命令 `node --test tests/frontend/*.test.mjs`。
 - 参考实现：`deepseek_html_20261013_7c2d5a.html`（下称"参考 HTML"）。参考工程：github.com/yetone/magpie（MIT）。
 
 ## Review Focus
@@ -381,25 +382,33 @@ test('mdToHtml covers heading, list, bold, code, link, blockquote') // 逐条断
 
 ### Task 9: 集成 pdf.js 官方 viewer
 
+> **已由 issue #7 交付**（提交 `2772771` / `156b1f6` / `fbaeda5`），本节按交付事实改正原文。原文的「`npm pack pdfjs-dist` 解出 `web/`」是走不通的路：npm 任何版本（已核实 3.11 / 4.10 / 5.4 / 6.4）都没有 `viewer.html`，只有 `PDFViewer` 组件库；官方 viewer 只存在于 GitHub Release 的 dist zip。Task 10–14 同理已被 #2 的 issue 索引取代，不再逐条改写。
+
+**Vendored 清单（6.4.299）：**
+
+保留：`viewer.html`、`viewer.mjs`、`viewer.css`、`images/`、`locale/{en-US,zh-CN}/viewer.ftl`、`locale/locale.json`、`build/pdf.mjs`、`build/pdf.worker.mjs`、`web/cmaps/`、`web/standard_fonts/`、`web/wasm/`、`web/iccs/`、`LICENSE`。
+剔除：所有 `.map`、除中英文外的 111 种语言包、`debugger*`、示例 PDF。
+版本号记录在 `frontend/vendor/pdfjs/VERSION`，由 `embed_test.go` 钉住（树内不得出现 `.map` / `debugger*` / 多余语言包）。
+
 **Files:**
-- Create: `frontend/vendor/pdfjs/`（从 npm `pdfjs-dist` 复制 `web/` 与 `build/`）, `frontend/viewer-bridge.js`
-- Modify: `frontend/index.html`（阅读器区改为 iframe）, `frontend/app.js`（打开/跳页）, `main.go` embed 范围确认
-- Test: 无自动化；验收为手工清单
+- Create: `frontend/vendor/pdfjs/{web,build,LICENSE,VERSION}`（从 GitHub Release 的 pdf.js **6.4.299** dist zip 解出，**保持官方原样布局、不改第三方源码**）, `frontend/viewer-bridge.mjs`
+- Modify: `frontend/index.html`（阅读器区改为 iframe）, `frontend/vendor/pdfjs/web/viewer.html`（唯一一处本地改动，见 Step 1）, `main.go` embed 范围确认
+- Test: `internal/httpfiles/server_test.go`（`TestFilesRejectsTraversal` / `TestFilesRangeRequest`）、`internal/app/contenttypes.go` 的固定类型注册、`embed_test.go`（vendored 树规模与剔除项）、`tests/frontend/bridge.test.mjs`（postMessage 协议）
 
 **Interfaces:**
 - Consumes: `/files/<rel>` 可访问；Task 7 的 `totalpages/progress` 接口。
-- Produces（Task 10~13 依赖的 postMessage 协议，双方都用 `frontend/lib/bridge.js` 导出的常量）:
+- Produces（Task 10~13 依赖的 postMessage 协议，双方都用 `frontend/lib/bridge.mjs` 导出的常量）:
 
 ```
 viewer → host: {src:'recorder', type:'ready'|'pages'(total)|'page'(page)}
 host → viewer: {src:'host', type:'goto'(page)}   // PDFViewerApplication.page = n
 ```
 
-- [ ] **Step 1: vendor pdf.js** — Run: `npm pack pdfjs-dist`，解出 `package/build/`、`package/web/` 到 `frontend/vendor/pdfjs/`；在 `viewer.html` 的脚本列表末尾加 `<script src="../../viewer-bridge.js"></script>`（改动越少越好，记录所用版本号）。
+- [ ] **Step 1: vendor pdf.js** — Run: 从 `https://github.com/mozilla/pdf.js/releases` 取 `pdfjs-6.4.299-dist.zip`，解出 `build/` 与 `web/` 到 `frontend/vendor/pdfjs/`，按上面的清单剔除，把 `6.4.299` 写进 `VERSION`。在 `viewer.html` 的脚本列表末尾加 `<script src="../../../viewer-bridge.mjs" type="module"></script>` —— 这是全树**唯一**一处对第三方源码的改动（postMessage 桥在 viewer 外部没有入口）。升级流程：整目录替换 + 补回这一行，写进 README 的工程约定。
 
-- [ ] **Step 2: 写 `viewer-bridge.js` 的 ready/pages/page 与 goto 处理**（`PDFViewerApplication.eventBus.on('pagesinit'/'pagechanging')`）
+- [ ] **Step 2: 写 `viewer-bridge.mjs` 的 ready/pages/page 与 goto 处理**（`PDFViewerApplication.eventBus.on('pagesinit'/'pagechanging')`）。两个必须处理的时序坑：① `AppOptions.eventBus` 在 `initialize()` 的异步段中途才赋值，要等 `app.initializedPromise` 再订阅；② `pagesinit` 之前到达的 `goto` 会被 `_setCurrentPageNumber` 静默吞掉，要按 `havePages` 暂存、`pagesinit` 补发。
 
-- [ ] **Step 3: `app.js` 把阅读器区换成 iframe**：`src = /vendor/pdfjs/web/viewer.html?file=` + `encodeURIComponent('/files/'+currentPath)`；监听 host 消息，"跳转到此页"/页码框回车 → `goto`。
+- [ ] **Step 3: `app.js` 把阅读器区换成 iframe**：`src = /vendor/pdfjs/web/viewer.html?file=` + `encodeURIComponent('/files/'+currentPath)`；监听 host 消息，"跳转到此页"/页码框回车 → `goto`。关闭时把 iframe 导航到 `about:blank`，否则 Chromium 不会卸载上一个文档。
 
 - [ ] **Step 4: 手工验收清单**：打开含书签的 PDF → 缩略图侧栏、`Ctrl+F` 文内查找、打印、大纲、缩放、翻页全部可用；跳页按钮生效；换文件不残留。
 
