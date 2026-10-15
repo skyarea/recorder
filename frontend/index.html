@@ -1,301 +1,223 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <title>PDF 阅读进度 · 笔记</title>
-  <style>
-    body {
-      font-family: system-ui, "Segoe UI", sans-serif;
-      margin: 0;
-      background: #f5f5f4;
-      color: #1c1917;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PDF 阅读进度 · 笔记</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#fff; --border:#e5e7eb; --text:#111827; --muted:#6b7280;
+    --accent:#2563eb; --accent-soft:#eef4ff; --hover:#f3f4f6;
+    --radius:8px; --shadow:0 1px 2px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0b1220; --panel:#111a2b; --border:#25324a; --text:#e6eaf2; --muted:#8b98ad;
+      --accent:#60a5fa; --accent-soft:#16233c; --hover:#182236;
+      --shadow:0 1px 2px rgba(0,0,0,.4);
     }
-    header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 14px 20px;
-      background: #fff;
-      border-bottom: 1px solid #e7e5e4;
-    }
-    header h1 { font-size: 16px; margin: 0; }
-    header .stats { color: #78716c; font-size: 13px; margin-left: auto; }
-    button {
-      font: inherit;
-      padding: 4px 14px;
-      border: 1px solid #a8a29e;
-      border-radius: 6px;
-      background: #fff;
-      cursor: pointer;
-    }
-    button:hover { background: #f5f5f4; }
-    main { flex: 1; display: flex; min-height: 0; }
-    .list-pane {
-      width: 380px;
-      padding: 20px;
-      overflow: auto;
-      border-right: 1px solid #e7e5e4;
-      background: #fff;
-    }
-    .empty { text-align: center; color: #57534e; margin-top: 15vh; }
-    .empty p { margin: 6px 0 16px; }
-    ul.files { list-style: none; margin: 0; padding: 0; }
-    ul.files li {
-      display: flex;
-      align-items: baseline;
-      gap: 10px;
-      padding: 8px 12px;
-      border-bottom: 1px solid #e7e5e4;
-      background: #fff;
-      cursor: pointer;
-    }
-    ul.files li:hover { background: #f5f5f4; }
-    ul.files li.selected { background: #eef2ff; }
-    .name { flex: 1; word-break: break-all; }
-    .status { font-size: 12px; color: #78716c; }
-    .status.reading { color: #2563eb; }
-    .status.done { color: #16a34a; }
-    .status.skip { color: #a8a29e; }
-    .page { font-size: 12px; color: #78716c; min-width: 64px; text-align: right; }
-    .star { color: #f59e0b; }
-    .warn { color: #b45309; font-size: 13px; margin-top: 12px; }
-    .reader { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-    .reader[hidden] { display: none; }
-    .reader-bar {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 14px;
-      background: #fff;
-      border-bottom: 1px solid #e7e5e4;
-      font-size: 13px;
-    }
-    .reader-bar .doc { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .reader-bar .pager { color: #78716c; margin-left: auto; }
-    .reader-bar input {
-      font: inherit;
-      width: 64px;
-      padding: 2px 6px;
-      border: 1px solid #a8a29e;
-      border-radius: 6px;
-    }
-    #viewer { flex: 1; width: 100%; border: 0; background: #525659; }
-  </style>
+  }
+  /* An explicit choice outranks the system preference, so the two blocks
+     above are the default and this one is the override. */
+  html[data-theme="light"]{
+    --bg:#f5f6f8; --panel:#fff; --border:#e5e7eb; --text:#111827; --muted:#6b7280;
+    --accent:#2563eb; --accent-soft:#eef4ff; --hover:#f3f4f6;
+    --shadow:0 1px 2px rgba(0,0,0,.05);
+  }
+  html[data-theme="dark"]{
+    --bg:#0b1220; --panel:#111a2b; --border:#25324a; --text:#e6eaf2; --muted:#8b98ad;
+    --accent:#60a5fa; --accent-soft:#16233c; --hover:#182236;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--text);
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  button,input,textarea{font:inherit;color:inherit}
+  .hidden{display:none !important}
+  kbd{
+    background:var(--hover); border:1px solid var(--border); border-radius:4px;
+    padding:1px 6px; font-size:12px; font-family:ui-monospace,monospace;
+  }
+
+  #topbar{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--border);
+    flex:0 0 auto;
+  }
+  .btn{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:6px 12px; border:1px solid var(--border); background:var(--panel);
+    border-radius:var(--radius); cursor:pointer; white-space:nowrap;
+    transition:.15s; user-select:none;
+  }
+  .btn:hover{background:var(--hover)}
+  .btn.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.sm{padding:3px 9px; font-size:12.5px}
+  .btn.link{border:none;background:none;color:var(--accent);padding:2px 4px;text-decoration:underline}
+  .root-name{font-weight:600; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .root-name:empty{display:none}
+  .spacer{flex:1}
+  .search{
+    width:200px; padding:6px 10px; border:1px solid var(--border); border-radius:var(--radius);
+    background:var(--bg); outline:none;
+  }
+  .search:focus{border-color:var(--accent); background:var(--panel)}
+
+  .stats{display:flex; gap:4px; flex-wrap:wrap}
+  .chip{
+    display:inline-flex; align-items:center; gap:5px;
+    padding:3px 9px; border-radius:99px; border:1px solid var(--border);
+    background:var(--panel); cursor:pointer; font-size:12.5px; transition:.15s;
+  }
+  .chip:hover{background:var(--hover)}
+  .chip.on{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); font-weight:600}
+  .chip b{font-weight:600}
+  .chip i{width:7px;height:7px;border-radius:50%;display:inline-block}
+
+  #notice{
+    flex:0 0 auto; padding:6px 14px; font-size:13px;
+    background:#fef3c7; color:#92400e; border-bottom:1px solid #fde68a;
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  }
+  html[data-theme="dark"] #notice{background:#3a2c0a; color:#fcd34d; border-color:#5a4410}
+  @media (prefers-color-scheme:dark){
+    html:not([data-theme]) #notice{background:#3a2c0a; color:#fcd34d; border-color:#5a4410}
+  }
+
+  main{flex:1; display:flex; overflow:hidden}
+  #sidebar{
+    width:300px; flex:0 0 300px; overflow:auto; background:var(--panel);
+    border-right:1px solid var(--border); padding:8px 6px 40px;
+  }
+  #detail{flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden}
+
+  .node{
+    display:flex; align-items:center; gap:6px;
+    padding:3px 8px; border-radius:6px; cursor:pointer;
+    white-space:nowrap; overflow:hidden; font-size:13.5px;
+  }
+  .node:hover{background:var(--hover)}
+  .node .nm{overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0}
+  .node.dir{font-weight:600; color:var(--muted)}
+  .node.file.active{background:var(--accent-soft); color:var(--accent); font-weight:600}
+  .node .tw{width:12px; text-align:center; font-size:10px; color:var(--muted); flex:0 0 12px}
+  .node .dot{flex:0 0 auto; font-size:11px; line-height:1}
+  .node .star{color:#f59e0b; font-size:11px}
+  .empty{padding:30px 16px; color:var(--muted); text-align:center; font-size:13.5px; line-height:1.9}
+
+  .reader-top{
+    flex:0 0 auto; padding:8px 14px 10px; background:var(--panel);
+    border-bottom:1px solid var(--border);
+  }
+  .rt-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .rt-row + .rt-row{margin-top:7px}
+  .d-path{font-size:14px; font-weight:600; word-break:break-all; flex:1; min-width:0}
+  .muted{color:var(--muted)}
+  .small{font-size:12.5px}
+  .star-btn{
+    flex:0 0 auto; width:30px; height:30px; border-radius:50%;
+    border:1px solid var(--border); background:var(--panel); cursor:pointer;
+    font-size:15px; line-height:1; color:var(--muted); transition:.15s;
+  }
+  .star-btn:hover{background:var(--hover)}
+  .star-btn.on{color:#f59e0b; border-color:#f59e0b}
+
+  .stbtn{
+    display:inline-flex; align-items:center; gap:5px;
+    padding:3px 10px; border-radius:99px; border:1px solid var(--border);
+    background:var(--panel); cursor:pointer; transition:.15s; font-size:12.5px;
+  }
+  .stbtn:hover{background:var(--hover)}
+  .stbtn .dot{color:var(--c)}
+  .stbtn.on{border-color:var(--c); background:var(--accent-soft); font-weight:600}
+  .stbtn kbd{
+    font-size:10px; opacity:.4; border:1px solid currentColor; border-radius:3px;
+    padding:0 3px; font-family:ui-monospace,monospace; background:none;
+  }
+  .page-row{display:inline-flex; align-items:center; gap:5px; font-size:13px}
+  .page-row input{
+    width:64px; padding:3px 7px; border:1px solid var(--border);
+    border-radius:6px; background:var(--bg); outline:none;
+  }
+  .pct{font-size:12.5px; color:var(--muted)}
+  .mini-bar{width:80px;height:5px;border-radius:99px;background:var(--hover);overflow:hidden}
+  .mini-bar i{display:block;height:100%;background:var(--accent)}
+
+  #pdfWrap{flex:1; min-height:0; position:relative; background:#525659}
+  #viewer{width:100%; height:100%; border:0; display:block}
+
+  .notes-panel{
+    flex:0 0 auto; background:var(--panel); border-top:1px solid var(--border);
+    display:flex; flex-direction:column; max-height:45%;
+  }
+  .notes-panel:not(.open) .notes-inner{display:none}
+  .notes-bar{
+    display:flex; align-items:center; gap:8px; padding:7px 14px;
+    cursor:pointer; user-select:none; font-size:13.5px; font-weight:600;
+  }
+  .notes-bar:hover{background:var(--hover)}
+  .notes-bar .count{
+    font-size:11.5px; background:var(--accent-soft); color:var(--accent);
+    border-radius:99px; padding:0 7px; font-weight:600;
+  }
+  .notes-inner{display:flex; flex-direction:column; min-height:0; overflow:auto; padding:0 14px 12px}
+  .notes-list{display:flex; flex-direction:column; gap:8px}
+  .note{
+    border:1px solid var(--border); border-radius:var(--radius);
+    padding:8px 10px; background:var(--bg); font-size:13.5px;
+  }
+  .note-meta{display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; margin-bottom:4px}
+  .note-page{background:var(--accent-soft); color:var(--accent); border-radius:4px; padding:0 5px}
+  .note-body p{margin:4px 0}
+  .note-body h3,.note-body h4,.note-body h5,.note-body h6{margin:8px 0 4px}
+  .note-body ul{margin:4px 0; padding-left:20px}
+  .note-body blockquote{margin:4px 0; padding-left:10px; border-left:3px solid var(--border); color:var(--muted)}
+  .note-body code{background:var(--hover); border-radius:4px; padding:1px 5px; font-size:12.5px}
+  .note-body a{color:var(--accent)}
+  .note-actions{display:flex; gap:4px; margin-top:6px}
+  .note-editor{display:flex; flex-direction:column; gap:6px; margin-top:10px}
+  .note-editor textarea{
+    min-height:64px; padding:8px 10px; border:1px solid var(--border);
+    border-radius:var(--radius); background:var(--bg); outline:none; resize:vertical;
+  }
+  .note-editor textarea:focus{border-color:var(--accent)}
+  .editor-foot{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+
+  #toast{
+    position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+    background:var(--text); color:var(--bg); padding:8px 16px; border-radius:99px;
+    font-size:13px; opacity:0; pointer-events:none; transition:.2s; z-index:10;
+  }
+  #toast.show{opacity:.95}
+</style>
 </head>
 <body>
-  <header>
-    <h1 id="root-name">PDF 阅读进度 · 笔记</h1>
-    <button id="pick">选择目录</button>
-    <span class="stats" id="stats"></span>
-  </header>
-  <main>
-    <section class="list-pane">
-      <div id="empty" class="empty" hidden>
-        <p id="empty-msg">尚未选择根目录。</p>
-        <button id="pick2">选择根目录</button>
-      </div>
-      <ul class="files" id="files"></ul>
-      <p class="warn" id="warn" hidden></p>
-    </section>
-    <section class="reader" id="reader" hidden>
-      <div class="reader-bar">
-        <span class="doc" id="doc-name"></span>
-        <span class="pager" id="pager"></span>
-        <input id="goto-page" type="number" min="1" step="1" aria-label="页码" />
-        <button id="goto-btn">跳转</button>
-        <button id="close-reader">关闭</button>
-      </div>
-      <iframe id="viewer" title="PDF 阅读区"></iframe>
-    </section>
-  </main>
-  <script type="module">
-    import { Msg, VIEWER_SRC, listener, postToViewer } from "./lib/bridge.mjs";
 
-    const STATUS = { todo: "待读", reading: "在读", done: "读完", skip: "跳过" };
+<header id="topbar">
+  <button class="btn primary" id="pick">选择目录</button>
+  <span id="rootName" class="root-name"></span>
+  <div id="stats" class="stats"></div>
+  <div class="spacer"></div>
+  <input id="search" class="search" type="search" placeholder="搜索文件 / 笔记…  ( / )" />
+  <button class="btn" id="theme-btn" title="切换深色 / 浅色">🌗</button>
+  <button class="btn" id="export-btn">导出</button>
+  <label class="btn">导入<input type="file" id="import-input" accept=".json,application/json" hidden></label>
+</header>
 
-    async function api(path, body) {
-      const resp = await fetch(path, body === undefined ? undefined
-        : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || resp.statusText);
-      return data;
-    }
+<div id="notice" class="hidden"></div>
 
-    function render(st) {
-      document.getElementById("root-name").textContent =
-        st.rootName || "PDF 阅读进度 · 笔记";
-      const list = document.getElementById("files");
-      list.replaceChildren(...st.scanned.map((f) => {
-        const rec = st.records[f.path] || { status: "todo", page: 0, starred: false };
-        const li = document.createElement("li");
-        li.dataset.path = f.path;
-        li.tabIndex = 0;
-        li.onclick = () => openDoc(f.path);
-        li.onkeydown = (e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            openDoc(f.path);
-          }
-        };
-        if (rec.starred) {
-          const s = document.createElement("span");
-          s.className = "star";
-          s.textContent = "★";
-          li.append(s);
-        }
-        const name = document.createElement("span");
-        name.className = "name";
-        name.textContent = f.path;
-        const status = document.createElement("span");
-        status.className = "status " + rec.status;
-        status.textContent = STATUS[rec.status] || rec.status;
-        const page = document.createElement("span");
-        page.className = "page";
-        page.textContent = rec.totalPages ? `${rec.page}/${rec.totalPages}` : `${rec.page}`;
-        li.append(name, status, page);
-        return li;
-      }));
-      markSelected();
+<main>
+  <aside id="sidebar"><div id="tree"></div></aside>
+  <section id="detail"></section>
+</main>
 
-      const done = Object.values(st.records).filter((r) => r.status === "done").length;
-      document.getElementById("stats").textContent =
-        `${st.scanned.length} 个文件 · 读完 ${done}`;
+<div id="toast"></div>
 
-      const empty = document.getElementById("empty");
-      empty.hidden = st.hasRoot;
-      document.getElementById("empty-msg").textContent = st.rootPath && !st.hasRoot
-        ? `根目录不存在：${st.rootPath}，请重新选择。`
-        : "尚未选择根目录。";
-
-      const warn = document.getElementById("warn");
-      warn.hidden = st.orphanCount === 0;
-      warn.textContent = `有 ${st.orphanCount} 条记录不在当前目录树中（孤儿），导入/导出可迁移。`;
-    }
-
-    // --- reader ---------------------------------------------------------------
-
-    // The document open in the reader, as a root-relative path.
-    let current = null;
-    let docPages = 0;
-    let curPage = 1;
-    // The viewer only accepts a goto once its bridge has reported ready; until
-    // then the frame has no listener, so remember the page instead.
-    let viewerReady = false;
-    let wantedPage = 0;
-    const viewer = document.getElementById("viewer");
-
-    function markSelected() {
-      for (const li of document.getElementById("files").children) {
-        li.classList.toggle("selected", li.dataset.path === current);
-      }
-    }
-
-    // Each segment is encoded on its own so '/' keeps naming the path that
-    // /files/* will decode back into a root-relative document.
-    function filesURL(rel) {
-      return "/files/" + rel.split("/").map(encodeURIComponent).join("/");
-    }
-
-    function renderPager() {
-      document.getElementById("pager").textContent =
-        docPages ? `第 ${curPage} / ${docPages} 页` : "载入中…";
-      document.getElementById("goto-page").max = docPages || "";
-    }
-
-    function resetReaderState() {
-      docPages = 0;
-      curPage = 1;
-      viewerReady = false;
-      wantedPage = 0;
-    }
-
-    function openDoc(rel) {
-      if (rel === current) return;
-      current = rel;
-      resetReaderState();
-      document.getElementById("doc-name").textContent = rel;
-      renderPager();
-      document.getElementById("reader").hidden = false;
-      markSelected();
-      // Navigating the frame to a new URL gives a whole new viewer document:
-      // that is what stops thumbnails, outline, find results and scroll
-      // position carrying over from the previous file.
-      viewer.src =
-        "/vendor/pdfjs/web/viewer.html?file=" + encodeURIComponent(filesURL(rel));
-    }
-
-    function closeReader() {
-      current = null;
-      resetReaderState();
-      document.getElementById("reader").hidden = true;
-      // Drop the document, not only the pane: a hidden frame would keep the
-      // old PDF and its state alive until the next open. Taking the attribute
-      // away leaves a live frame alone, so navigate it away instead.
-      viewer.src = "about:blank";
-      markSelected();
-    }
-
-    window.addEventListener("message", listener(VIEWER_SRC, (m) => {
-      if (m.type === Msg.Ready) {
-        viewerReady = true;
-        if (wantedPage) {
-          postToViewer(viewer, Msg.Goto, { page: wantedPage });
-          wantedPage = 0;
-        }
-        return;
-      }
-      // The bridge always says ready before it reports any page, so a message
-      // from a frame that has not is the previous document still winding down.
-      if (!viewerReady) return;
-      if (m.type === Msg.Pages) {
-        docPages = m.total || 0;
-      } else if (m.type === Msg.Page) {
-        curPage = m.page || 1;
-      } else {
-        return;
-      }
-      renderPager();
-    }));
-
-    function gotoPage() {
-      const page = Number.parseInt(document.getElementById("goto-page").value, 10);
-      if (!Number.isInteger(page) || page < 1) return;
-      if (viewerReady) {
-        postToViewer(viewer, Msg.Goto, { page });
-      } else {
-        wantedPage = page;
-      }
-    }
-
-    document.getElementById("goto-btn").onclick = gotoPage;
-    document.getElementById("goto-page").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") gotoPage();
-    });
-    document.getElementById("close-reader").onclick = closeReader;
-
-    async function refresh() {
-      render(await api("/api/state"));
-    }
-
-    async function pickRoot() {
-      try {
-        // The open document belongs to the old library.
-        closeReader();
-        render(await api("/api/root", {}));
-      } catch (e) {
-        alert(e.message);
-      }
-    }
-
-    document.getElementById("pick").onclick = pickRoot;
-    document.getElementById("pick2").onclick = pickRoot;
-    refresh().catch((e) => {
-      document.getElementById("empty-msg").textContent = "本地服务未就绪：" + e.message;
-      document.getElementById("empty").hidden = false;
-    });
-  </script>
+<script type="module" src="./app.mjs"></script>
 </body>
 </html>
