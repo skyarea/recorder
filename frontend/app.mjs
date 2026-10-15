@@ -17,6 +17,15 @@ const STATUS = {
 };
 const STATUS_KEYS = ["todo", "reading", "done", "skip"];
 
+// The annotation tools. Only the first ships in #10; the rest arrive with
+// #11 and #12, which reuse the same overlay and geometry.
+const TOOLS = [
+  { id: "highlight", label: "划词", hint: "选中文字后松开，得到高亮" },
+  { id: "line", label: "画线", hint: "按住拖动，画自由曲线" },
+  { id: "box", label: "框选", hint: "按住拖出一个矩形" },
+  { id: "erase", label: "擦除", hint: "点一条标注删掉它" },
+];
+
 const $ = (sel) => document.querySelector(sel);
 
 // --- state ------------------------------------------------------------------
@@ -27,6 +36,11 @@ let state = null;
 let query = "";
 let editingNoteId = null;
 let current = null; // root-relative path open in the reader
+// The active annotation tool, or null when the overlay is idle. The viewer is
+// told on every change, because it holds the layer that draws them.
+let activeTool = null;
+// Annotations by page number for the open document, as the API returns them.
+let docAnnotations = {};
 
 // Reader bookkeeping. The viewer only accepts a goto once its bridge has
 // reported ready, so an early jump is remembered instead of dropped.
@@ -34,7 +48,10 @@ let docPages = 0;
 let curPage = 1;
 let viewerReady = false;
 let wantedPage = 0;
-const viewer = $("#viewer");
+// The reader frame is rebuilt by renderDetail, so it is looked up per use
+// rather than captured once: a captured one would go stale the moment the
+// detail pane redraws.
+const frame = () => $("#viewer");
 
 async function api(path, body) {
   const resp = await fetch(path, body === undefined ? undefined : {
@@ -284,6 +301,62 @@ function renderNotice() {
   el.append(dismiss);
 }
 
+// --- annotations -----------------------------------------------------------
+
+// Switching tools tells the viewer, which owns the layer that draws them. The
+// same tool clicked again turns it off, so there is always a way back to plain
+// reading.
+function setTool(id) {
+  activeTool = id || null;
+  postToViewer(frame(), Msg.Tool, { tool: activeTool });
+  for (const b of document.querySelectorAll('[data-act="tool"]')) {
+    b.classList.toggle("on", b.dataset.v === activeTool);
+  }
+  // The pager is the one place a hint can live without covering the page.
+  const pager = $("#pager");
+  if (pager && activeTool) {
+    const t = TOOLS.find((x) => x.id === activeTool);
+    pager.textContent = t ? t.hint : "";
+  } else {
+    renderPager();
+  }
+}
+
+// The viewer draws what the host sends, so every mutation is followed by a
+// re-fetch and a re-send: the stored shape is the only source of truth.
+async function loadAnnotations() {
+  if (!current) {
+    docAnnotations = {};
+    return;
+  }
+  const res = await api("/api/annotations?path=" + encodeURIComponent(current));
+  docAnnotations = {};
+  for (const a of res.annotations || []) {
+    (docAnnotations[a.page] ||= []).push({ id: a.id, kind: a.kind, data: JSON.parse(a.data) });
+  }
+  postToViewer(frame(), Msg.Annotations, { annotations: docAnnotations });
+}
+
+async function addAnnotation(page, kind, data) {
+  try {
+    await api("/api/annotations", { path: current, page, kind, data: JSON.stringify(data) });
+    await loadAnnotations();
+    await refresh();
+  } catch (e) {
+    toast("保存标注失败：" + e.message);
+  }
+}
+
+async function deleteAnnotation(id) {
+  try {
+    await api("/api/annotations/delete", { id });
+    await loadAnnotations();
+    await refresh();
+  } catch (e) {
+    toast("删除标注失败：" + e.message);
+  }
+}
+
 // --- reader -----------------------------------------------------------------
 
 function renderPager() {
@@ -311,24 +384,24 @@ function openDoc(rel) {
   if (rel === current) return;
   current = rel;
   resetReaderState();
-  $("#doc-name").textContent = rel;
-  renderPager();
-  $("#reader").hidden = false;
+  activeTool = null;
+  docAnnotations = {};
   markSelected();
-  // Navigating the frame to a new URL gives a whole new viewer document:
-  // that is what stops thumbnails, outline, find results and scroll position
-  // carrying over from the previous file.
-  viewer.src = "/vendor/pdfjs/web/viewer.html?file=" + encodeURIComponent(filesURL(rel));
+  // The frame itself is created by renderDetail, which the caller runs next;
+  // it navigates to the document there, so the first open and every later one
+  // go through the same code path.
+  // The overlay is redrawn from the API once the new document is ready, so
+  // annotations never appear on the wrong file.
+  loadAnnotations().catch(() => {});
 }
 
 function closeReader() {
   current = null;
   resetReaderState();
-  $("#reader").hidden = true;
   // Drop the document, not only the pane: a hidden frame would keep the old
   // PDF and its state alive until the next open. Removing the attribute
   // leaves a live frame alone, so navigate it away instead.
-  viewer.src = "about:blank";
+  frame().src = "about:blank";
   markSelected();
   renderDetail();
 }
@@ -349,7 +422,7 @@ function gotoPage() {
   const page = Number.parseInt(input.value, 10);
   if (!Number.isInteger(page) || page < 1) return;
   if (viewerReady) {
-    postToViewer(viewer, Msg.Goto, { page });
+    postToViewer(frame(), Msg.Goto, { page });
   } else {
     wantedPage = page;
   }
@@ -358,8 +431,12 @@ function gotoPage() {
 window.addEventListener("message", listener(VIEWER_SRC, (m) => {
   if (m.type === Msg.Ready) {
     viewerReady = true;
+    // The overlay is live from the moment it reports ready, so anything the
+    // host already knows about is drawn before the user can interact.
+    postToViewer(frame(), Msg.Annotations, { annotations: docAnnotations });
+    postToViewer(frame(), Msg.Tool, { tool: activeTool });
     if (wantedPage) {
-      postToViewer(viewer, Msg.Goto, { page: wantedPage });
+      postToViewer(frame(), Msg.Goto, { page: wantedPage });
       wantedPage = 0;
     }
     return;
@@ -367,6 +444,14 @@ window.addEventListener("message", listener(VIEWER_SRC, (m) => {
   // The bridge always says ready before it reports any page, so a message
   // from a frame that has not is the previous document still winding down.
   if (!viewerReady) return;
+  if (m.type === Msg.Add) {
+    addAnnotation(m.page, m.kind, m.data);
+    return;
+  }
+  if (m.type === Msg.Delete) {
+    deleteAnnotation(m.id);
+    return;
+  }
   if (m.type === Msg.Pages) {
     docPages = m.total || 0;
   } else if (m.type === Msg.Page) {
@@ -424,6 +509,12 @@ function renderDetail() {
         </button>`).join("")}
     </div>
     <div class="rt-row">
+      <span class="muted small">标注</span>
+      ${TOOLS.map((t) => `
+        <button class="tbtn${activeTool === t.id ? " on" : ""}" data-act="tool" data-v="${t.id}"
+                title="${t.hint}">${t.label}</button>`).join("")}
+    </div>
+    <div class="rt-row">
       <label class="page-row">页码 <input type="number" min="0" id="page-input" value="${r.page || 0}"></label>
       <span class="muted small">/</span>
       <label class="page-row">总页数 <input type="number" min="0" id="total-input" value="${r.totalPages || 0}"></label>
@@ -440,6 +531,18 @@ function renderDetail() {
 
   const wrap = document.createElement("div");
   wrap.id = "pdfWrap";
+  // The iframe lives here rather than in index.html so that every open of a
+  // document starts from a fresh frame: a reused one would keep the previous
+  // document's state until it navigated.
+  const viewerFrame = document.createElement("iframe");
+  viewerFrame.id = "viewer";
+  viewerFrame.title = "PDF 阅读区";
+  // Navigating a fresh frame to the document is what stops thumbnails,
+  // outline, find results and scroll position carrying over from the previous
+  // file: a new URL is a whole new viewer document.
+  viewerFrame.src = "/vendor/pdfjs/web/viewer.html?file=" +
+    encodeURIComponent(filesURL(current));
+  wrap.append(viewerFrame);
   el.append(wrap);
 
   const notes = document.createElement("div");
@@ -480,6 +583,7 @@ function wireDetail(top, notes) {
     const act = btn.dataset.act;
     if (act === "star") await setStar(current, !rec(current).starred);
     else if (act === "status") await setStatus(current, btn.dataset.v);
+    else if (act === "tool") setTool(activeTool === btn.dataset.v ? null : btn.dataset.v);
     else if (act === "save-page") await savePage();
     else if (act === "reveal") await revealCurrent();
     else if (act === "close") closeReader();
