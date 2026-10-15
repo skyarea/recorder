@@ -352,7 +352,7 @@ func TestUnknownRoute404(t *testing.T)
 
 **Files:**
 - Create: `frontend/index.html`, `frontend/app.css`, `frontend/app.js`, `frontend/lib/tree.js`, `frontend/lib/md.js`, `frontend/package.json`（`"type":"module"`）
-- Test: `frontend/test/tree.test.js`, `frontend/test/md.test.js`
+- Test: `tests/frontend/tree.test.mjs`, `tests/frontend/md.test.mjs`
 
 **Interfaces:**
 - Consumes: Task 7 的 `/api/*` 契约。
@@ -366,11 +366,11 @@ test('match filters by status, star and query')     // filter/star/大小写不�
 test('mdToHtml covers heading, list, bold, code, link, blockquote') // 逐条断言输出 HTML 片段
 ```
 
-- [ ] **Step 2: 运行确认失败** — Run: `node --test frontend/test/` → FAIL
+- [ ] **Step 2: 运行确认失败** — Run: `node --test tests/frontend/*.test.mjs` → FAIL
 
 - [ ] **Step 3: 实现 lib 纯函数**（逐行对照参考 HTML 的 `buildTree/hasMatch/match/mdInline/mdToHtml`）
 
-- [ ] **Step 4: 运行确认通过** — Run: `node --test frontend/test/` → PASS
+- [ ] **Step 4: 运行确认通过** — Run: `node --test tests/frontend/*.test.mjs` → PASS
 
 - [ ] **Step 5: 实现 `index.html/app.css/app.js`**：从参考 HTML 拆出结构与样式；数据层把 `loadAll/save/getRec` 换成 fetch `/api/state` 与各 POST；功能全集：目录树、状态/星标（含 `1~4`/`S` 快捷键）、统计 chips、搜索（`/`）、`J/K` 切换、笔记 CRUD + Markdown + `Ctrl+Enter`、页码/总页数输入与跳页按钮、导出（`POST /api/export`）与导入（`<input type=file>` 读文本 POST）、孤儿提示 + 清理、深浅色主题（CSS 自带）、UI 状态 POST `/api/ui`。阅读器区域先留占位（Task 9 接管）。删除参考 HTML 的"新标签打开/下载"两按钮，换一个"在资源管理器中显示"（Go 侧 `POST /api/reveal {path}`，`explorer /select`；这是桌面端等价物，属本计划的自主决定）。
 
@@ -420,13 +420,13 @@ host → viewer: {src:'host', type:'goto'(page)}   // PDFViewerApplication.page 
 
 **Files:**
 - Modify: `frontend/viewer-bridge.js`, `frontend/app.js`, `frontend/lib/throttle.js`（新）
-- Test: `frontend/test/throttle.test.js`
+- Test: `tests/frontend/throttle.test.mjs`
 
 **Interfaces:**
 - Consumes: 协议 `{type:'pages'|'page'}`；`POST /api/progress`、`POST /api/totalpages`。
 - Produces: `lib/throttle.js` 导出 `throttle(fn, ms)`（trailing 调用、立即首调）。
 
-- [ ] **Step 1: 写失败测试** — `test('throttle fires leading then trailing within window')`：假计时器或真实 30ms 窗口断言调用次数与末次参数。Run: `node --test frontend/test/` → FAIL
+- [ ] **Step 1: 写失败测试** — `test('throttle fires leading then trailing within window')`：假计时器或真实 30ms 窗口断言调用次数与末次参数。Run: `node --test tests/frontend/*.test.mjs` → FAIL
 
 - [ ] **Step 2: 实现 `throttle`** → Run 测试 → PASS
 
@@ -443,7 +443,7 @@ host → viewer: {src:'host', type:'goto'(page)}   // PDFViewerApplication.page 
 **Files:**
 - Create: `frontend/lib/geometry.js`, `frontend/annotate.js`（viewer 内覆盖层逻辑，由 viewer-bridge 加载）
 - Modify: `frontend/index.html`（工具栏：划词/画线/框选/删除标注，中文文案）, `frontend/app.js`（工具状态 → postMessage）
-- Test: `frontend/test/geometry.test.js`
+- Test: `tests/frontend/geometry.test.mjs`
 
 **Interfaces:**
 - Consumes: viewer 内 pdf.js 每页 `.page` 容器（`data-page-number`）。
@@ -472,7 +472,7 @@ test('pointsToNorm normalizes polyline')
 test('hitTest hits box/line/highlight within eps and misses outside')
 ```
 
-- [ ] **Step 2: 运行确认失败** — Run: `node --test frontend/test/` → FAIL
+- [ ] **Step 2: 运行确认失败** — Run: `node --test tests/frontend/*.test.mjs` → FAIL
 
 - [ ] **Step 3: 实现 `geometry.js`** → PASS
 
@@ -490,7 +490,7 @@ test('hitTest hits box/line/highlight within eps and misses outside')
 
 **Files:**
 - Modify: `frontend/app.js`, `frontend/viewer-bridge.js`, `frontend/annotate.js`
-- Test: Go 侧已由 Task 3 `TestAnnotationCRUD` 覆盖；本任务补 `frontend/test/bridge-protocol.test.js`
+- Test: Go 侧已由 Task 3 `TestAnnotationCRUD` 覆盖；本任务补 `tests/frontend/bridge-protocol.test.mjs`
 
 **Interfaces:**
 - Consumes: `POST /api/annotations`、`GET /api/annotations?path=`、`POST /api/annotations/delete`；协议 `ann-created`。
@@ -512,7 +512,7 @@ test('hitTest hits box/line/highlight within eps and misses outside')
 
 **Files:**
 - Modify: `frontend/app.js`, `frontend/viewer-bridge.js`, `frontend/annotate.js`, `frontend/app.css`
-- Test: `frontend/test/note-ann.test.js`（关联选择器的纯逻辑）
+- Test: `tests/frontend/note-ann.test.mjs`（关联选择器的纯逻辑）
 
 **Interfaces:**
 - Consumes: `/api/notes`、`/api/links`(+delete)、`GET /api/annotations`；`Note.AnnIDs`（Task 3）。
@@ -526,7 +526,7 @@ host → viewer: {type:'flash', id}                      // 点笔记跳转后�
 
 - [ ] **Step 1: 写失败测试** — 纯函数：`annLabel(ann)`（`p.3 · 划词` 等展示文案）、`linkedNotes(notes, annId)`（反查）。Run → FAIL
 
-- [ ] **Step 2: 实现并通过** — Run: `node --test frontend/test/` → PASS
+- [ ] **Step 2: 实现并通过** — Run: `node --test tests/frontend/*.test.mjs` → PASS
 
 - [ ] **Step 3: 就地弹框**：`ann-created` 持久化成功后 host 回发 `show-note-popup` → viewer 在标注旁出小 textarea → 保存/空文本取消；保存 = `POST /api/notes` + `POST /api/links`。
 
@@ -554,7 +554,7 @@ host → viewer: {type:'flash', id}                      // 点笔记跳转后�
 
 - [ ] **Step 2: WebView2 检测** — 启动时读注册表 `HKLM\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`（及 WOW6432Node 视图）判断 evergreen 是否存在；缺失 → 弹 MessageBox 给出 WebView2 Runtime 下载链接（https://developer.microsoft.com/microsoft-edge/webview2/），参考 magpie 的 `internal/gui/webview2.go`。
 
-- [ ] **Step 3: 全量回归** — Run: `go test ./...` && `node --test frontend/test/` → 全 PASS；跑一次 Task 8~13 的手工验收清单。
+- [ ] **Step 3: 全量回归** — Run: `go test ./...` && `node --test tests/frontend/*.test.mjs` → 全 PASS；跑一次 Task 8~13 的手工验收清单。
 
 - [ ] **Step 4: 干净环境验证** — 从 `dist/recorder.exe` 双击启动（非开发目录），完成一次"选目录→阅读→标注→笔记→关开重进"全流程；确认 `%APPDATA%\recorder\recorder.db` 生成。
 

@@ -54,9 +54,11 @@ jobs:
       - name: frontend tests
         shell: bash
         run: |
-          # 前端纯逻辑测试在 Task 8（UI 落地）之前还不存在。bash 的 glob 在
-          # 无匹配时会原样传字面量，node 会把它当成文件名去读然后报错 ——
-          # 所以先展开成数组、空数组就明确跳过，而不是让这一步红灯。
+          # 前端纯逻辑测试。布局：tests/frontend/（与 Go 的 internal/* 对称，
+          # 一处放全部前端测试）。计划文档里的 frontend/test/ 是旧口径，
+          # 已统一到 tests/frontend/。
+          # bash 的 glob 在无匹配时会原样传字面量，node 会把它当成文件名
+          # 去读然后报错 —— 所以先展开成数组、空数组就明确跳过。
           shopt -s nullglob
           specs=(tests/frontend/*.test.mjs)
           if [ ${#specs[@]} -eq 0 ]; then
