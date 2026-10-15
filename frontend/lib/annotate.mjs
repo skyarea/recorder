@@ -314,10 +314,24 @@ function clearPreview() {
 // has not yet been asked about); this side only draws it and reports the
 // answer back. An empty text is a skip, and the host then stops asking.
 let popup = null;
+// The annotation the open popup was anchored to, so a re-send of the shape
+// map can tell "my shape is gone" (close) from "other shapes changed" (keep
+// the popup and whatever the user has typed).
+let popupAnnId = null;
 
 function closePopup() {
   popup?.remove();
   popup = null;
+  popupAnnId = null;
+}
+
+// Whether the popup's anchor shape is still in the map the host last sent.
+function popupAnchorAlive() {
+  if (!popupAnnId) return false;
+  for (const list of Object.values(annotations)) {
+    if ((list || []).some((a) => a.id === popupAnnId)) return true;
+  }
+  return false;
 }
 
 // The SVG shape carrying this annotation id, if its page is rendered.
@@ -334,6 +348,7 @@ function shapeFor(annId) {
 
 function openNotePopup(annId, page) {
   closePopup();
+  popupAnnId = annId;
 
   const box = document.createElement("div");
   box.className = "recorder-note-popup";
@@ -445,9 +460,11 @@ function onMessage(e) {
     // page.
     for (const p of Object.keys(annotations)) renderPage(Number(p));
     settlePreviews();
-    // The popup was opened for a shape that may no longer exist, and every
-    // re-send follows a save that answers it anyway: it has served its turn.
-    closePopup();
+    // The popup is a fixed overlay on the body, not a shape inside the page
+    // layer, so a re-render does not touch it. Close it only when the shape it
+    // was anchored to has actually left the map — otherwise a re-send for an
+    // unrelated shape would throw away what the user is typing.
+    if (popup && !popupAnchorAlive()) closePopup();
   }
   if (m.type === Msg.NotePopup) {
     openNotePopup(m.annId, m.page);

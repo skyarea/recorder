@@ -40,7 +40,9 @@ syso:
 
 # 约定的打包命令（计划 Task 14）：-s -w 去符号与 DWARF，-X main.version 注版本。
 # CGO 必须为 0：SQLite 用纯 Go 驱动，整个产物无 C 工具链依赖。
+# go build 不会自建输出目录，所以先 mkdir -p dist。
 exe: syso
+	mkdir -p dist
 	CGO_ENABLED=0 $(GOEXE) build -trimpath \
 		-ldflags "-s -w -X main.version=$(VERSION)" \
 		-o dist/recorder.exe .

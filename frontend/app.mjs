@@ -11,7 +11,7 @@ import { Msg, VIEWER_SRC, listener, postToViewer } from "./lib/bridge.mjs";
 import { buildTree, hasMatch, match } from "./lib/tree.mjs";
 import { mdToHtml } from "./lib/md.mjs";
 import { throttle } from "./lib/throttle.mjs";
-import { annLabel, linkedNotes } from "./lib/note-ann.mjs";
+import { annLabel, linkedNotes, findAnnotation, allAnnotations, ANN_LABELS } from "./lib/note-ann.mjs";
 
 const STATUS = {
   todo:    { label: "未读", color: "#94a3b8", dot: "○" },
@@ -23,10 +23,15 @@ const STATUS_KEYS = ["todo", "reading", "done", "skip"];
 
 // The annotation tools. All four ship: 划词 (#10), 画线 (#11), 框选 (#12)
 // and 擦除 (#13), all reusing the same overlay and geometry.
+//
+// The three drawing tools take their label from ANN_LABELS, the same table
+// annLabel renders a badge with: a toolbar that said 划词 while its badge said
+// something else would be two vocabularies for one thing. 擦除 is not a stored
+// kind — it deletes shapes rather than being one — so it names itself.
 const TOOLS = [
-  { id: "highlight", label: "划词", hint: "选中文字后松开，得到高亮" },
-  { id: "line", label: "画线", hint: "按住拖动，画自由曲线" },
-  { id: "box", label: "框选", hint: "按住拖出一个矩形" },
+  { id: "highlight", label: ANN_LABELS.highlight, hint: "选中文字后松开，得到高亮" },
+  { id: "line", label: ANN_LABELS.line, hint: "按住拖动，画自由曲线" },
+  { id: "box", label: ANN_LABELS.box, hint: "按住拖出一个矩形" },
   { id: "erase", label: "擦除", hint: "点一条标注删掉它" },
 ];
 
@@ -419,24 +424,9 @@ async function saveNoteForAnnotation(annId, page, text) {
 
 // --- note↔annotation linking (#14) -----------------------------------------
 
-// The stored shape behind an id, with its page: what a note badge needs in
-// order to know where to jump. The map is only ever for the open document,
-// which is also the only document whose notes panel is on screen.
-function findAnnotation(annId) {
-  for (const [page, list] of Object.entries(docAnnotations)) {
-    const hit = (list || []).find((a) => a.id === annId);
-    if (hit) return { id: hit.id, kind: hit.kind, page: Number(page) };
-  }
-  return null;
-}
-
-// Every annotation of the open document, page first then oldest: the order
-// the "挂标注" picker lists them in.
-function allAnnotations() {
-  return Object.entries(docAnnotations)
-    .flatMap(([page, list]) => (list || []).map((a) => ({ ...a, page: Number(page) })))
-    .sort((a, b) => a.page - b.page);
-}
+// The stored shape behind an id, with its page, and the full list of shapes
+// on the open document: the badge and the picker read them from docAnnotations
+// (keyed by page), so they pass that map to the tested selectors in note-ann.mjs.
 
 // Jump the viewer to a page; a goto before the bridge is ready is held the
 // same way the page-number box holds one.
@@ -450,7 +440,7 @@ function gotoViewerPage(page) {
 // after the goto lands, and a blink sent to a shape that is not on screen
 // would find nothing to blink.
 function jumpToAnnotation(annId) {
-  const ann = findAnnotation(annId);
+  const ann = findAnnotation(docAnnotations, annId);
   if (!ann) return;
   gotoViewerPage(ann.page);
   setTimeout(() => postToViewer(frame(), Msg.Flash, { id: ann.id }), 400);
@@ -489,7 +479,7 @@ async function unlinkNoteFromAnnotation(noteId, annId) {
 function noteLinkPicker(note) {
   const box = document.createElement("div");
   box.className = "link-picker";
-  const anns = allAnnotations();
+  const anns = allAnnotations(docAnnotations);
   if (!anns.length) {
     box.textContent = "这份文档还没有标注；先用工具划词/画线/框选一条。";
     return box;
@@ -892,7 +882,7 @@ function renderNotes() {
       const badges = document.createElement("div");
       badges.className = "note-badges";
       for (const id of annIds) {
-        const ann = findAnnotation(id);
+        const ann = findAnnotation(docAnnotations, id);
         const b = document.createElement("button");
         b.className = "ann-badge";
         b.dataset.act = "jump-ann";

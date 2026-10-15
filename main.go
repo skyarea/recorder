@@ -82,8 +82,10 @@ func run() error {
 
 func main() {
 	if err := run(); err != nil {
-		// A missing WebView2 has already been explained by the dialog; log.Fatal
-		// would only repeat it into a console nobody is watching.
+		// For a double-clicked GUI exe stderr goes nowhere, so this only helps
+		// someone who launched it from a terminal. The WebView2-missing case has
+		// already been explained by its dialog; every other startup error has no
+		// window to report through, so the log line is all the user gets.
 		log.Fatal(err)
 	}
 }

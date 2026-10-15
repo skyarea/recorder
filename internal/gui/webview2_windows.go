@@ -50,6 +50,5 @@ func NotifyWebView2Missing() {
 		"本程序需要 Microsoft Edge WebView2 运行库，但此电脑上没有安装。\n\n" +
 			"请安装后重新打开：\n" + webview2DownloadURL)
 	caption := windows.StringToUTF16Ptr("PDF 阅读进度 · 笔记")
-	// MB_OK | MB_ICONERROR: one button, an error glyph.
-	_, _ = windows.MessageBox(0, text, caption, 0x00000000|0x00000010)
+	_, _ = windows.MessageBox(0, text, caption, windows.MB_OK|windows.MB_ICONERROR)
 }

@@ -13,7 +13,7 @@
 `dist/recorder.exe`）开一个窗口：选定目录 → 左边列出 PDF → 点开在右边读（vendored
 的 pdf.js 官方 viewer，滚动/缩放/`Ctrl+F`/缩略图/大纲/打印都在）。滚动自动存进度，
 划词/画线/框选三种标注落库，标注后就地弹笔记、面板里也能补挂，笔记↔标注双向互链
-可点徒回原位闪烁。数据全部写进 `%APPDATA%\recorder\recorder.db`。
+可点徽标跳回原位闪烁。数据全部写进 `%APPDATA%\recorder\recorder.db`。
 
 已经写好的部分：
 
@@ -27,7 +27,7 @@
 | 界面 | 目录树、状态/星标、统计、搜索、主题、笔记面板 | #8 |
 | 进度自动跟随 | 滚动经节流写 `/api/progress`，页码框可跳转 | #9 |
 | 标注 | 划词/画线/框选三工具 + 持久化 + 回访，归一化几何防缩放漂移 | #10~#13 |
-| 笔记↔标注互链 | 就地弹框 + 面板补挂徒标 + 跳转闪烁，多对多 | #14 |
+| 笔记↔标注互链 | 就地弹框 + 面板补挂徽标 + 跳转闪烁，多对多 | #14 |
 | 打包 | `make` / `go-winres`：单文件 exe，带图标与版本信息，WebView2 缺失弹提示 | #15 |
 
 还差的收尾（打包的自动化部分已完成，剩下的需真人/对外动作）：
@@ -183,7 +183,7 @@ bash scripts/install-hooks.sh
 - **数据不迁移**：不兼容旧版 localStorage 数据（导出 / 导入 JSON 仅作备份功能）
 - **单根目录**：上次扫描的目录记在设置里，启动时自动重扫；文件身份为「根目录相对路径、`/` 分隔」
 - **pdf.js 是 vendored 的第三方源码**：`frontend/vendor/pdfjs/` 保持上游目录结构、原样不动，`VERSION` 记下版本号。升级 = 用新 release 的产物整目录替换（同样精简掉 sourcemap、多余语言、debugger、示例 PDF），再把 `viewer.html` 里那一行 `<script src="../../../viewer-bridge.mjs">` 补回去 —— 那是全树唯一一处本地改动
-- **响应类型由程序自己定，不信操作系统**：`internal/app/contenttypes.go` 固定了 `.html/.css/.js/.mjs/.json/.wasm` 的 Content-Type。Windows 上 Go 先查注册表、查不到才用内置表，任何装过的软件都能把 `.mjs` 登记成 `text/plain`（CI 镜像就是），而浏览器会拒绝按模块执行它、`WebAssembly.instantiateStreaming` 也会直接失败
+- **响应类型由程序自己定，不信操作系统**：`internal/app/contenttypes.go` 固定了 `.html/.css/.js/.mjs/.json/.pdf/.wasm` 的 Content-Type。Windows 上 Go 先查注册表、查不到才用内置表，任何装过的软件都能把 `.mjs` 登记成 `text/plain`（CI 镜像就是），而浏览器会拒绝按模块执行它、`WebAssembly.instantiateStreaming` 也会直接失败
 
 设计文档在 [`docs/superpowers/specs/`](docs/superpowers/specs/)，
 实现计划在 [`docs/superpowers/plans/`](docs/superpowers/plans/)。

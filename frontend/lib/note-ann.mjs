@@ -44,3 +44,32 @@ export function linkedNotes(notes, annotationId) {
   const list = notes || [];
   return list.filter((n) => Array.isArray(n.annIds) && n.annIds.includes(annotationId));
 }
+
+/**
+ * findAnnotation looks one id up in the by-page map the host keeps for the
+ * open document ({page: [{id, kind, data}]}) and returns {id, kind, page}.
+ *
+ * A note badge needs the shape's page to know where to jump, and the page is
+ * the map's key rather than a field of the shape, so it is folded in here.
+ * The page keys are object properties and therefore strings; the returned
+ * page is always a number. Null when the id is not in the map — which is how
+ * a note whose shape has since been deleted is rendered as a dead badge
+ * rather than silently dropping the link the user can still un-hang.
+ */
+export function findAnnotation(byPage, annotationId) {
+  for (const [page, list] of Object.entries(byPage || {})) {
+    const hit = (list || []).find((a) => a.id === annotationId);
+    if (hit) return { id: hit.id, kind: hit.kind, page: Number(page) };
+  }
+  return null;
+}
+
+/**
+ * allAnnotations flattens the same by-page map into a list ordered by page,
+ * which is the order the "挂标注" picker shows the shapes of a document in.
+ */
+export function allAnnotations(byPage) {
+  return Object.entries(byPage || {})
+    .flatMap(([page, list]) => (list || []).map((a) => ({ ...a, page: Number(page) })))
+    .sort((a, b) => a.page - b.page);
+}
