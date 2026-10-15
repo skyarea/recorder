@@ -18,6 +18,8 @@ func TestEmbeddedViewerAssetsAreShipped(t *testing.T) {
 		"frontend/lib/bridge.mjs",
 		"frontend/lib/tree.mjs",
 		"frontend/lib/md.mjs",
+		"frontend/lib/geometry.mjs",
+		"frontend/lib/annotate.mjs",
 		"frontend/viewer-bridge.mjs",
 		"frontend/vendor/pdfjs/VERSION",
 		"frontend/vendor/pdfjs/LICENSE",

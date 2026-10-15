@@ -9,6 +9,12 @@ export const Msg = {
   Pages: "pages", // viewer -> host: document has this many pages
   Page: "page", // viewer -> host: this page is now on screen
   Goto: "goto", // host -> viewer: show this page
+
+  // The annotation tools (#10-#13).
+  Tool: "tool", // host -> viewer: {tool: 'highlight'|'line'|'box'|'erase'|null}
+  Annotations: "annotations", // host -> viewer: {page, annotations:[{id,kind,data}]}
+  Add: "add", // viewer -> host: {page, kind, data} the user drew this
+  Delete: "delete", // viewer -> host: {id} the user erased this
 };
 
 // The viewer and the host are same-origin documents, so both directions name

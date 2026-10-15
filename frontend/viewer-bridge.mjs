@@ -3,6 +3,7 @@
 // lives outside the vendor directory on purpose: upgrading pdf.js means
 // replacing that directory wholesale and re-applying only that one tag.
 import { HOST_SRC, Msg, listener, postToHost } from "./lib/bridge.mjs";
+import { start as startAnnotations } from "./lib/annotate.mjs";
 
 const app = globalThis.PDFViewerApplication;
 if (!app) {
@@ -57,5 +58,7 @@ async function connect(app) {
   app.eventBus.on("pagechanging", (e) => {
     postToHost(Msg.Page, { page: e.pageNumber });
   });
+  // The annotation overlay shares this bus and the same readiness gate.
+  startAnnotations();
   postToHost(Msg.Ready);
 }

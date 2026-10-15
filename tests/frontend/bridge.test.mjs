@@ -22,6 +22,17 @@ function installEnv() {
   globalThis.parent = {
     postMessage: (msg, origin) => sent.push({ msg, origin }),
   };
+  // The bridge starts the annotation overlay once pdf.js is ready, and that
+  // injects its own <style>. A stub is the honest environment for it: the
+  // overlay's geometry is tested on its own, and what matters here is that
+  // starting it does not disturb the readiness protocol.
+  globalThis.document = {
+    getElementById: () => null,
+    createElement: () => ({ setAttribute() {}, append() {}, style: {} }),
+    head: { append() {} },
+    querySelectorAll: () => [],
+    body: { classList: { toggle() {} }, dataset: {} },
+  };
   return {
     sent,
     fire: (event) => listeners.forEach((fn) => fn(event)),
@@ -40,6 +51,12 @@ function fakeApp() {
     pdfDocument: null,
     eventBus: null,
     initializedPromise: null,
+    // The annotation overlay hangs its pointer listener off the viewer
+    // element and redraws on its events, so the fake carries one.
+    pdfViewer: {
+      viewer: { addEventListener() {} },
+      getPageView: () => null,
+    },
     // pdf.js keeps its own page number and refuses to move before it has any
     // pages, so a page written too early is lost rather than queued. The fake
     // has to drop it the same way or a test cannot tell the two apart.
@@ -155,7 +172,9 @@ test("the bridge says nothing until pdf.js has built its event bus", async () =>
 
   app.start();
   await settled();
-  assert.deepEqual(app.topics(), ["pagechanging", "pagesinit", "pagesloaded"]);
+  // scalechanging belongs to the annotation overlay: it redraws the
+  // stored normalised shapes at the new zoom.
+  assert.deepEqual(app.topics(), ["pagechanging", "pagesinit", "pagesloaded", "scalechanging"]);
   assert.deepEqual(env.sent.map((s) => s.msg.type), ["ready"]);
 });
 
