@@ -454,12 +454,28 @@ type uiReq struct {
 	Collapsed *[]string `json:"collapsed"`
 	Filter    *string   `json:"filter"`
 	NotesOpen *bool     `json:"notesOpen"`
+	Theme     *string   `json:"theme"`
 }
+
+// themes are the only values ui_theme may hold. A theme the shell does not
+// know leaves it with no stylesheet to apply, so the API refuses the write
+// instead of storing something the frontend will silently ignore.
+var themes = map[string]bool{"light": true, "dark": true}
 
 func (a *App) handleUI(w http.ResponseWriter, r *http.Request) {
 	req, ok := decodeBody[uiReq](w, r)
 	if !ok {
 		return
+	}
+	if req.Theme != nil {
+		if !themes[*req.Theme] {
+			writeErr(w, http.StatusBadRequest, "theme must be light or dark")
+			return
+		}
+		if err := a.store.SetSetting(settingUITheme, *req.Theme); err != nil {
+			a.writeState(w, err)
+			return
+		}
 	}
 	if req.Collapsed != nil {
 		b, err := json.Marshal(*req.Collapsed)

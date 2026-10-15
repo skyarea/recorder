@@ -46,6 +46,9 @@ type uiView struct {
 	Collapsed []string `json:"collapsed"`
 	Filter    string   `json:"filter"`
 	NotesOpen bool     `json:"notesOpen"`
+	// Theme is the user's explicit choice, "light" or "dark". Empty means
+	// they have not chosen, and the shell follows the system instead.
+	Theme string `json:"theme"`
 }
 
 type stateView struct {
@@ -164,6 +167,7 @@ const (
 	settingUICollapsed = "ui_collapsed"
 	settingUIFilter    = "ui_filter"
 	settingUINotesOpen = "ui_notes_open"
+	settingUITheme     = "ui_theme"
 )
 
 func (a *App) rootName() string {
@@ -197,6 +201,11 @@ func (a *App) uiState() (uiView, error) {
 		return v, err
 	} else if ok {
 		v.NotesOpen = s == "true"
+	}
+	if s, ok, err := a.store.Setting(settingUITheme); err != nil {
+		return v, err
+	} else if ok {
+		v.Theme = s
 	}
 	if v.Collapsed == nil {
 		v.Collapsed = []string{}

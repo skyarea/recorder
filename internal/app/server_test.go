@@ -658,3 +658,33 @@ func TestStaticServesBrowserEnforcedContentTypes(t *testing.T) {
 		}
 	}
 }
+
+// The theme is the one UI preference the shell cannot re-derive on each load:
+// it is a choice, not a view state. It has to survive a restart like the
+// filter and the collapsed folders do.
+func TestThemePersistsAcrossRestart(t *testing.T) {
+	_, srv, _ := newTestApp(t)
+
+	// Absent until the user chooses one.
+	if ui := stateOf(t, srv)["ui"].(map[string]any); ui["theme"] != "" {
+		t.Fatalf("fresh state ui.theme = %v, want empty", ui["theme"])
+	}
+
+	for _, theme := range []string{"dark", "light"} {
+		if resp, st := post(t, srv, "/api/ui", map[string]any{"theme": theme}); resp.StatusCode != 200 {
+			t.Fatalf("set theme %s: %d %v", theme, resp.StatusCode, st)
+		}
+		if got := stateOf(t, srv)["ui"].(map[string]any)["theme"]; got != theme {
+			t.Fatalf("ui.theme after setting %s = %v", theme, got)
+		}
+	}
+
+	// A theme outside the two the UI offers is refused rather than stored, so
+	// a typo cannot leave the shell with no stylesheet to apply.
+	if resp, st := post(t, srv, "/api/ui", map[string]any{"theme": "neon"}); resp.StatusCode != 400 {
+		t.Fatalf("set bogus theme: %d %v", resp.StatusCode, st)
+	}
+	if got := stateOf(t, srv)["ui"].(map[string]any)["theme"]; got != "light" {
+		t.Fatalf("ui.theme after bogus write = %v, want the previous light", got)
+	}
+}
