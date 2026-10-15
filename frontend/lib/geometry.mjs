@@ -116,32 +116,37 @@ export function thinPolyline(points, minDist) {
  * testing the wrong thing. The default eps is 0.01, one percent of the page.
  */
 export function hitTest(ann, nx, ny, eps = 0.01) {
+  // The overlay stores its own copy as {id, kind, data} on each shape; the
+  // data alone ({rects}|{points}|{rect}) is accepted too, so a caller that
+  // only has the geometry works without the id.
   const data = ann && ann.data ? ann.data : ann;
   if (!data || typeof data !== "object") return false;
+  return rectHit(data, nx, ny, eps) || pointHit(data, nx, ny, eps);
+}
 
-  if (Array.isArray(data.rects)) {
-    return data.rects.some((r) => (
-      nx >= r.x - eps && nx <= r.x + r.w + eps &&
-      ny >= r.y - eps && ny <= r.y + r.h + eps
-    ));
+// A rect shape: highlight stores an array of them (one per selected line),
+// box stores one. A point inside any of them, grown by eps, is a hit.
+function rectHit(data, nx, ny, eps) {
+  const rects = data.rects || (data.rect ? [data.rect] : []);
+  return rects.some((r) => (
+    nx >= r.x - eps && nx <= r.x + r.w + eps &&
+    ny >= r.y - eps && ny <= r.y + r.h + eps
+  ));
+}
+
+// A polyline: the point is a hit when it comes within eps of any segment,
+// measured perpendicular to the segment and never past its ends, so a click
+// well beyond a stroke's tip does not select it. A single stored point (a
+// dot) is hit only right on it.
+function pointHit(data, nx, ny, eps) {
+  const pts = data.points;
+  if (!Array.isArray(pts)) return false;
+  if (pts.length === 1) {
+    return Math.abs(pts[0][0] - nx) <= eps && Math.abs(pts[0][1] - ny) <= eps;
   }
-
-  if (Array.isArray(data.points)) {
-    const pts = data.points;
-    if (pts.length === 1) {
-      // A single-point stroke (a dot) is hit only right on it.
-      return Math.abs(pts[0][0] - nx) <= eps && Math.abs(pts[0][1] - ny) <= eps;
-    }
-    for (let i = 0; i < pts.length - 1; i++) {
-      if (nearSegment(pts[i], pts[i + 1], nx, ny, eps)) return true;
-    }
-    return false;
+  for (let i = 0; i < pts.length - 1; i++) {
+    if (nearSegment(pts[i], pts[i + 1], nx, ny, eps)) return true;
   }
-
-  if (data.rect) {
-    return hitTest({ data: { rects: [data.rect] } }, nx, ny, eps);
-  }
-
   return false;
 }
 

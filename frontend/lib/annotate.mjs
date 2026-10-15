@@ -27,6 +27,9 @@ const LAYER_CLASS = "recorder-annotations";
 let tool = null;
 // Annotations by page number: {page: [{id, kind, data}]}.
 let annotations = {};
+// The total page count, as the host last said: the overlay needs it to walk
+// every page on a tool switch, and the host already tracks it.
+let total = 0;
 // The drag in progress: {page, startX, startY, points} in client pixels.
 let drag = null;
 
@@ -37,9 +40,11 @@ function findLayer(pageEl) {
   return pageEl.querySelector(":scope > ." + LAYER_CLASS);
 }
 
-// The SVG layer over one page, created on first use. The page element is the
-// positioning parent (pdf.js gives it position:relative and its own size), so
-// the layer can cover it exactly at any zoom.
+// Shapes are passive themselves (an inline style would beat any sheet
+// rule, and the sheet cannot carry that state), so the layer carries the
+// pointer exactly while it has shapes on it: that is what an erase click
+// lands on, and the moment the last shape is gone the text underneath takes
+// the pointer back.
 function layerFor(pageEl) {
   let layer = findLayer(pageEl);
   if (!layer) {
@@ -57,6 +62,17 @@ function layerFor(pageEl) {
   return layer;
 }
 
+// The layer covers the whole page, so the moment the host turns erase on it
+// takes the pointer even while the layer still holds no shape: a click on
+// an empty page must not drop into the text underneath and start a
+// selection. The moment the last shape leaves, or the tool turns off, the
+// page's own text takes the pointer back.
+function syncLayerPointerEvents(pageEl) {
+  const layer = findLayer(pageEl);
+  if (!layer) return;
+  layer.style.pointerEvents = tool === "erase" ? "auto" : (layer.childElementCount ? "auto" : "none");
+}
+
 // The page element for a page number, if that page is currently rendered.
 function pageElFor(pageNumber) {
   return app.pdfViewer.getPageView(pageNumber - 1)?.div ?? null;
@@ -72,9 +88,10 @@ function pageRectOf(pageEl) {
 
 // --- drawing ----------------------------------------------------------------
 
-function drawShape(kind, data, pageEl) {
+function drawShape(kind, data, id, pageEl) {
   const rect = pageRectOf(pageEl);
   const layer = layerFor(pageEl);
+  const ann = JSON.stringify({ id, kind, data });
 
   if (kind === "highlight" || kind === "box") {
     const rects = kind === "box" ? [data.rect] : data.rects;
@@ -86,6 +103,7 @@ function drawShape(kind, data, pageEl) {
       el.setAttribute("width", c.width);
       el.setAttribute("height", c.height);
       el.setAttribute("class", "recorder-ann recorder-ann-" + kind);
+      el.setAttribute("data-ann", ann);
       layer.append(el);
     }
     return;
@@ -102,36 +120,40 @@ function drawShape(kind, data, pageEl) {
     el.setAttribute("points", pts);
     el.setAttribute("class", "recorder-ann recorder-ann-line");
     el.setAttribute("fill", "none");
+    el.setAttribute("data-ann", ann);
     layer.append(el);
     return;
   }
 }
 
-// Redraw one page's layer from the annotations the host sent.
-// A page that has no annotations keeps no layer at all, so a page that
-// renders late (scrolling, reopening) grows one only when it has something
-// to draw.
+// Redraw one page's layer from the annotations the host last re-sent in
+// full. The local map only ever shrinks by this message, so a page that
+// renders late (scrolling, reopening) with no entry still has nothing to
+// draw: no layer is created and none is kept.
 function renderPage(pageNumber) {
   const pageEl = pageElFor(pageNumber);
   if (!pageEl) return;
   const anns = annotations[pageNumber] || [];
+  const layer = findLayer(pageEl);
   if (!anns.length) {
-    // The host re-sends the full map after every mutation, so a page whose
-    // annotations were all erased stays key-free here as well rather than
-    // accumulating empty entries that redrawAll would walk for nothing.
-    delete annotations[pageNumber];
-    findLayer(pageEl)?.remove();
+    layer?.remove();
     return;
   }
-  const layer = findLayer(pageEl) || layerFor(pageEl);
-  layer.replaceChildren();
-  for (const ann of anns) {
-    drawShape(ann.kind, ann.data, pageEl);
+  const target = layer || layerFor(pageEl);
+  target.replaceChildren();
+  for (const a of anns) {
+    drawShape(a.kind, a.data, a.id, pageEl);
+  }
+  // Shapes are passive themselves; the layer carries the pointer so an erase
+  // click lands on the page, and only while there is something to erase.
+  if (tool === "erase") {
+    layer.style.pointerEvents = "auto";
+  } else {
+    syncLayerPointerEvents(pageEl);
   }
 }
 
 // --- pointer input ----------------------------------------------------------
-
 // A drag starts only when a tool is active, and only on the page's own area.
 function onPointerDown(e) {
   if (!tool) return;
@@ -140,6 +162,8 @@ function onPointerDown(e) {
   // The 划词 tool is made *from* the selection, so it must not stop the
   // pointer from selecting. Drawing tools take the selection away instead.
   if (tool !== "highlight") e.preventDefault();
+  // A fresh drag on a page whose shape the host has not re-sent yet must not
+  // be swallowed by the page's layer: it is reconciled when the resync lands.
   drag = {
     page: Number(pageEl.dataset.pageNumber),
     startX: e.clientX,
@@ -201,10 +225,17 @@ function onPointerUp(e) {
     } else if (tool === "erase") {
       const nx = (e.clientX - rect.x) / rect.width;
       const ny = (e.clientY - rect.y) / rect.height;
-      for (const ann of annotations[drag.page] || []) {
-        if (hitTest(ann, nx, ny)) {
-          postToHost(Msg.Delete, { id: ann.id });
-        }
+      // The click lands on the shape the pointer is over: the layer only
+      // holds the pointer so an erase click reaches the page, so erase the
+      // topmost stored shape at that point, not every one that happens to
+      // cover it.
+      const layer = findLayer(pageEl);
+      const hit = layer ? [...layer.children].find(
+        (el) => el.hasAttribute("data-ann") &&
+          hitTest(JSON.parse(el.getAttribute("data-ann")), nx, ny)
+      ) : null;
+      if (hit) {
+        postToHost(Msg.Delete, { id: JSON.parse(hit.getAttribute("data-ann")).id });
       }
     }
   }
@@ -227,6 +258,18 @@ function selectionRects(pageEl, rect) {
     if (n.w > 0 && n.h > 0) out.push(n);
   }
   return out;
+}
+
+// Reconcile every layer that currently carries a shape, so its pointer
+// behaviour matches whether a shape is really there. The host re-sends the
+// full map after every mutation, which is the only moment a layer's content
+// can disagree with the stored set — so this runs when that message lands,
+// and when the idle overlay hands the pointer back on a tool switch.
+function settlePreviews() {
+  for (const p of Object.keys(annotations)) {
+    const pageEl = pageElFor(Number(p));
+    if (pageEl) syncLayerPointerEvents(pageEl);
+  }
 }
 
 // The in-progress shape, drawn into the page's own layer and removed when the
@@ -277,16 +320,31 @@ function onMessage(e) {
     // A tool that draws takes the text selection away, so the browser's own
     // highlight stops fighting the annotation layer.
     document.body.classList.toggle("recorder-tool-active", !!tool);
+    // A tool switch is the other moment the pointer answer changes: erase
+    // takes the pointer over every page the moment it turns on — a page with
+    // no shape included, so a click there does not drop into the text — and
+    // hands it back the moment the tool turns off, so a shape that just
+    // appeared cannot swallow the next click.
+    for (let i = 1; i <= total; i++) {
+      const pageEl = pageElFor(i);
+      if (pageEl) syncLayerPointerEvents(pageEl);
+    }
     if (!tool) clearPreview();
     return;
   }
   if (m.type === Msg.Annotations) {
     annotations = m.annotations || {};
-    for (const page of Object.keys(annotations)) renderPage(Number(page));
+    // The host re-sent the full set, so whatever the overlay still holds is
+    // stale: a page missing from the map has genuinely lost every shape, and
+    // its layer goes with it. This is where a deleted shape finally leaves a
+    // page.
+    for (const p of Object.keys(annotations)) renderPage(Number(p));
+    settlePreviews();
+  }
+  if (m.type === Msg.Pages) {
+    total = m.total || 0;
   }
 }
-
-// --- zoom and page lifecycle ------------------------------------------------
 
 // A zoom re-renders every page, so the stored normalised shapes have to be
 // redrawn at the new scale. pdf.js replaces the page elements, so this runs

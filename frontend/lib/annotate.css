@@ -3,8 +3,11 @@
    the vendored viewer.html refuses inline <style> blocks, and the overlay
    must stay the one line added to that file. */
 
-/* Shapes are passive: they never grab the pointer, except in erase mode
-   where the layer itself takes it so a click lands where the user aimed. */
+/* The shape's own passive pointer events beat this sheet, and so does the
+   layer's JS-driven pointer-events (an inline style always wins a sheet
+   rule), so this file holds only what the inline styles never touch: the
+   visual style of each shape. The layer's pointer behaviour is decided
+   layerFor / renderPage / the tool message, not here. */
 .recorder-ann {
   pointer-events: none;
 }
@@ -41,7 +44,4 @@ body.recorder-tool-active:not([data-tool="highlight"]) .pdfViewer .textLayer {
   -webkit-user-select: none;
 }
 
-/* Erase mode: the layer takes the pointer so clicks hit where they land. */
-body.recorder-tool-active[data-tool="erase"] .recorder-annotations {
-  pointer-events: auto;
-}
+
