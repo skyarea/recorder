@@ -62,3 +62,26 @@ func TestEmbeddedFrontendDropsTrimmedJunk(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The release ships 113 localisations; the decision was to keep the two the
+// interface can actually show. Anything else in the tree is weight every user
+// carries in the binary for a language this app never selects.
+func TestEmbeddedLocalesAreOnlyChineseAndEnglish(t *testing.T) {
+	const localeDir = "frontend/vendor/pdfjs/web/locale"
+	var kept []string
+	err := fs.WalkDir(FrontendFiles, localeDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && path.Dir(p) == localeDir {
+			kept = append(kept, path.Base(p))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(kept, " "); got != "en-US zh-CN" {
+		t.Fatalf("locales shipped = %q, want %q", got, "en-US zh-CN")
+	}
+}
