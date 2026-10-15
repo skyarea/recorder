@@ -80,17 +80,16 @@ func NewHandler(getRoot func() string) http.Handler {
 			writeErrJSON(w, http.StatusNotFound, "not found")
 			return
 		}
-		// Naming the PDF type explicitly keeps a Windows registry quirk from
-		// talking pdf.js out of it; anything else in the root is served with
-		// the type its own name advertises.
-		if strings.EqualFold(filepath.Ext(fi.Name()), ".pdf") {
-			w.Header().Set("Content-Type", "application/pdf")
-		}
 		// ServeContent mints an ETag only for If-Range requests, so set the
 		// validator here: re-opening the same document then costs a 304.
 		w.Header().Set("Etag", etagOf(fi))
 		// ServeContent gives us Range (pdf.js fetches documents in pieces)
 		// and Last-Modified, and honours the validators set above.
+		// The response's Content-Type comes from the file's extension via
+		// mime.TypeByExtension, which resolves .pdf through internal/app's
+		// pinned table (that package's init registers it, and this package
+		// is only ever mounted by it) rather than through the Windows
+		// registry — where an installed program may have rewritten it.
 		http.ServeContent(w, r, fi.Name(), fi.ModTime(), f)
 	})
 }
