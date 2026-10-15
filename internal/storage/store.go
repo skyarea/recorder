@@ -87,7 +87,7 @@ func Open(dbPath string) (*Store, error) {
 	}
 	db, err := sql.Open("sqlite", "file:"+dbPath+dsnParams)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("storage: open database: %w", err)
 	}
 
 	// SQLite 是进程内的单文件数据库，不存在多连接带来的并发收益，
@@ -103,7 +103,7 @@ func Open(dbPath string) (*Store, error) {
 	for _, stmt := range []string{schemaFiles, schemaSettings, schemaNotes, schemaAnnotations, schemaNoteAnnotations} {
 		if _, err := db.Exec(stmt); err != nil {
 			_ = db.Close()
-			return nil, err
+			return nil, fmt.Errorf("storage: create schema: %w", err)
 		}
 	}
 	return &Store{db: db}, nil
