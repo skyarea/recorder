@@ -9,10 +9,12 @@ import (
 )
 
 // Run starts the Wails v3 app with one main window loading url (the
-// loopback HTTP address of the app service). onAppReady receives the
-// created application before the loop starts, to wire native dialogs.
+// loopback HTTP address of the app service). version is the build stamped
+// by packaging ("dev" otherwise); it shows in the window title so a user
+// can say which build misbehaved. onAppReady receives the created
+// application before the loop starts, to wire native dialogs.
 // Run blocks until the app quits and returns any error from the run.
-func Run(url string, onAppReady func(*application.App) error) error {
+func Run(url, version string, onAppReady func(*application.App) error) error {
 	app := application.New(application.Options{
 		Name:        "recorder",
 		Description: "PDF 阅读进度 · 笔记",
@@ -24,9 +26,13 @@ func Run(url string, onAppReady func(*application.App) error) error {
 		}
 	}
 
+	title := "PDF 阅读进度 · 笔记"
+	if version != "" && version != "dev" {
+		title += "  v" + version
+	}
 	mainWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:   "main",
-		Title:  "PDF 阅读进度 · 笔记",
+		Title:  title,
 		URL:    url,
 		Width:  1280,
 		Height: 860,

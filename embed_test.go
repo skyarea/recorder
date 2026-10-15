@@ -15,6 +15,7 @@ func TestEmbeddedViewerAssetsAreShipped(t *testing.T) {
 	mustExist := []string{
 		"frontend/index.html",
 		"frontend/app.mjs",
+		"frontend/favicon.ico",
 		"frontend/lib/bridge.mjs",
 		"frontend/lib/tree.mjs",
 		"frontend/lib/md.mjs",

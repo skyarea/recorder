@@ -48,6 +48,23 @@ jobs:
           CGO_ENABLED: "0"
         run: go test ./... -count=1
 
+      - name: Generate Windows resources (icon + version info)
+        shell: bash
+        run: |
+          set -euo pipefail
+          go install github.com/tc-hib/go-winres@latest
+          # 产物只有 64 位；版本用本次 tag 解析出的 version（无 v 前缀）。
+          "$(go env GOPATH)/bin/go-winres" simply \
+            --icon build/windows/icon.ico \
+            --arch amd64 \
+            --out rsrc \
+            --manifest gui \
+            --product-version "${{ steps.ver.outputs.version }}" \
+            --file-version "${{ steps.ver.outputs.version }}" \
+            --product-name "recorder" \
+            --file-description "PDF 阅读进度 · 笔记" \
+            --copyright "skyarea"
+
       - name: Build dist/recorder.exe
         shell: bash
         env:

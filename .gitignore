@@ -12,6 +12,10 @@ recorder.exe
 /dist/
 node_modules/
 
+# go-winres 生成的 Windows 资源（图标 + 版本信息）：由 make / release.yml 按
+# 当前 tag 现场生成，版本必须跟着 tag 走，所以不入库。
+rsrc_windows_*.syso
+
 # 密钥与凭据——绝不允许入库
 .env
 .env.*
