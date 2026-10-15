@@ -1,6 +1,9 @@
 # SDD 控制器工作区（台账、简报、审阅包）
 .superpowers/
 
+# 手工验证时的临时落脚处：fixture、探针脚本、装来用一次的库
+.scratch/
+
 # 代码索引工具的本地缓存
 .codegraph/
 
