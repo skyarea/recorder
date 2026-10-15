@@ -33,6 +33,11 @@
 | #14 | 笔记 ↔ 标注双向互链 |
 | #15 | 打包成单文件 exe |
 
+### 记在案上的待办（还没有对应 issue）
+
+- **JBIG2 扫描件没实测过** —— `web/wasm/jbig2.wasm` 在位、可服务、类型正确，OpenJPEG 那条路已经拿一个「整页只有一张 JPX 图」的 PDF 真跑通（wasm 被请求、解码并上屏）。JBIG2 需要一个编码器（`jbig2enc`）才造得出真件，本机 Ghostscript 10.08 的构建里没有 JBIG2 编码路径。
+- **`.pdf` 的类型有两套写法** —— `internal/httpfiles/server.go` 为 `.pdf` 显式写死 `application/pdf`，而 `internal/app/contenttypes.go` 用另一套机制（注册进 `mime` 表）解决了同一类问题。应当把 `.pdf` 并进那张固定表、删掉这个特例，让「不信操作系统」只剩一种写法。
+
 想跟踪进度看 [Issues](https://github.com/skyarea/recorder/issues)；
 想了解设计意图看 [设计文档](docs/superpowers/specs/2026-10-13-pdf-reader-desktop-design.md)；
 想了解实施顺序看 [实现计划](docs/superpowers/plans/2026-10-13-pdf-reader-desktop.md)。
