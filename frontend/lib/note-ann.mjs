@@ -1,0 +1,46 @@
+// The pure logic behind the note↔annotation badges and pickers.
+//
+// A note carries `annIds` (the annotations it references); one annotation can
+// be referenced by many notes. annLabel turns an annotation into the short
+// Chinese text shown on a note's badge and in the "挂标注" picker; linkedNotes
+// answers the reverse question the badge count and the picker need to show.
+// Both are plain functions over the data the API already returns, so the
+// browser shell and `node --test` share one implementation.
+
+// The Chinese name of each tool, matching the toolbar in app.mjs.
+export const ANN_LABELS = {
+  highlight: "划词",
+  line: "画线",
+  box: "框选",
+};
+
+/**
+ * annLabel renders one annotation for display: `p.3 · 划词`.
+ *
+ * The page prefix appears only for a real page number (a positive integer):
+ * a missing or bogus page still yields the tool's name rather than the string
+ * "p.undefined". An unknown kind keeps its raw name — the tools store only
+ * highlight|line|box today, so this is a fallback, not a second vocabulary.
+ * Anything that is not an object with a kind returns an empty string.
+ */
+export function annLabel(ann) {
+  if (!ann || typeof ann !== "object") return "";
+  const name = ANN_LABELS[ann.kind] || ann.kind || "";
+  if (!name) return "";
+  const page = ann.page;
+  if (Number.isInteger(page) && page > 0) return `p.${page} · ${name}`;
+  return name;
+}
+
+/**
+ * linkedNotes returns the notes that reference annotationId.
+ *
+ * This is the reverse of `note.annIds` and what makes the link many-to-many
+ * visible from the annotation's side: a note may list many annotations, and
+ * the same annotation may be listed by many notes, all seen in one pass.
+ * Notes missing their annIds are treated as linked to nothing.
+ */
+export function linkedNotes(notes, annotationId) {
+  const list = notes || [];
+  return list.filter((n) => Array.isArray(n.annIds) && n.annIds.includes(annotationId));
+}

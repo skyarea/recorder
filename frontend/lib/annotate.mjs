@@ -307,6 +307,111 @@ function clearPreview() {
   for (const el of document.querySelectorAll(".recorder-preview")) el.remove();
 }
 
+// --- the note popup and the flash (#14) -------------------------------------
+
+// One popup exists at a time, anchored next to the shape it was opened for.
+// The host owns the decision to show it (only right after a shape the user
+// has not yet been asked about); this side only draws it and reports the
+// answer back. An empty text is a skip, and the host then stops asking.
+let popup = null;
+
+function closePopup() {
+  popup?.remove();
+  popup = null;
+}
+
+// The SVG shape carrying this annotation id, if its page is rendered.
+function shapeFor(annId) {
+  for (const el of document.querySelectorAll(".recorder-ann[data-ann]")) {
+    try {
+      if (JSON.parse(el.getAttribute("data-ann")).id === annId) return el;
+    } catch {
+      /* a malformed data-ann is simply not our shape */
+    }
+  }
+  return null;
+}
+
+function openNotePopup(annId, page) {
+  closePopup();
+
+  const box = document.createElement("div");
+  box.className = "recorder-note-popup";
+
+  const title = document.createElement("div");
+  title.className = "recorder-note-popup-title";
+  title.textContent = `为这条标注写笔记（${page} 页）`;
+  box.append(title);
+
+  const ta = document.createElement("textarea");
+  ta.placeholder = "写点什么… 留空跳过";
+  box.append(ta);
+
+  const foot = document.createElement("div");
+  foot.className = "recorder-note-popup-foot";
+  const skip = document.createElement("button");
+  skip.textContent = "跳过";
+  const save = document.createElement("button");
+  save.className = "primary";
+  save.textContent = "保存";
+  foot.append(document.createElement("span"), skip, save);
+  box.append(foot);
+
+  // The answer goes back either way: text for a note, empty for a skip.
+  const send = (text) => {
+    closePopup();
+    postToHost(Msg.SaveNote, { annId, page, text });
+  };
+  save.addEventListener("click", () => send(ta.value.trim()));
+  skip.addEventListener("click", () => send(""));
+  ta.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      send(ta.value.trim());
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      send("");
+    }
+  });
+
+  // Anchor it beside the shape, inside the viewport; when the page is not
+  // rendered the host has already scrolled to it, so this is best-effort.
+  const shape = shapeFor(annId);
+  const anchor = shape?.getBoundingClientRect();
+  document.body.append(box);
+  if (anchor) {
+    box.style.left = Math.max(8, Math.min(anchor.left, window.innerWidth - box.offsetWidth - 8)) + "px";
+    box.style.top = Math.min(anchor.bottom + 6, window.innerHeight - box.offsetHeight - 8) + "px";
+  } else {
+    box.style.right = "24px";
+    box.style.bottom = "60px";
+  }
+  popup = box;
+  ta.focus();
+}
+
+// The blink that locates a shape a note points at: a class the sheet animates
+// for 1.2s, then taken back off so the same note can be clicked again.
+let flashTimer = null;
+let flashed = null;
+
+function flashShape(annId) {
+  if (flashed) {
+    clearTimeout(flashTimer);
+    flashed.classList.remove("recorder-flash");
+    flashed = null;
+  }
+  const shape = shapeFor(annId);
+  if (!shape) return;
+  shape.classList.add("recorder-flash");
+  flashed = shape;
+  flashTimer = setTimeout(() => {
+    shape.classList.remove("recorder-flash");
+    if (flashed === shape) flashed = null;
+  }, 1200);
+}
+
 // --- host protocol ----------------------------------------------------------
 
 function onMessage(e) {
@@ -340,6 +445,15 @@ function onMessage(e) {
     // page.
     for (const p of Object.keys(annotations)) renderPage(Number(p));
     settlePreviews();
+    // The popup was opened for a shape that may no longer exist, and every
+    // re-send follows a save that answers it anyway: it has served its turn.
+    closePopup();
+  }
+  if (m.type === Msg.NotePopup) {
+    openNotePopup(m.annId, m.page);
+  }
+  if (m.type === Msg.Flash) {
+    flashShape(m.id);
   }
   if (m.type === Msg.Pages) {
     total = m.total || 0;

@@ -1,13 +1,17 @@
 // The application shell: state from GET /api/state, every write back through
 // the /api/* endpoints, and the tree/notes/reader UI built from it.
 //
-// The two pieces of real logic live in their own tested modules:
-//   - ./lib/tree.mjs — grouping and natural ordering of the file list
-//   - ./lib/md.mjs   — the note panel's Markdown
+// The pieces of real logic live in their own tested modules:
+//   - ./lib/tree.mjs     — grouping and natural ordering of the file list
+//   - ./lib/md.mjs       — the note panel's Markdown
+//   - ./lib/throttle.mjs — the pace of the progress autosave
+//   - ./lib/note-ann.mjs — the note↔annotation labels and reverse lookup
 // Everything here is wiring and rendering.
 import { Msg, VIEWER_SRC, listener, postToViewer } from "./lib/bridge.mjs";
 import { buildTree, hasMatch, match } from "./lib/tree.mjs";
 import { mdToHtml } from "./lib/md.mjs";
+import { throttle } from "./lib/throttle.mjs";
+import { annLabel, linkedNotes } from "./lib/note-ann.mjs";
 
 const STATUS = {
   todo:    { label: "未读", color: "#94a3b8", dot: "○" },
@@ -41,6 +45,13 @@ let current = null; // root-relative path open in the reader
 let activeTool = null;
 // Annotations by page number for the open document, as the API returns them.
 let docAnnotations = {};
+// Entry one of the note popup (#14): once the user skips the popup that
+// follows a new annotation, asking again on every next stroke would be
+// pestering, not offering. The panel remains the way to attach a note later.
+let popupMuted = false;
+// The note whose "挂标注" picker is open, or null. Re-rendered after every
+// link/unlink so the picker shows the link it just made or broke.
+let linkPickerNoteId = null;
 
 // Reader bookkeeping. The viewer only accepts a goto once its bridge has
 // reported ready, so an early jump is remembered instead of dropped.
@@ -48,6 +59,41 @@ let docPages = 0;
 let curPage = 1;
 let viewerReady = false;
 let wantedPage = 0;
+
+// Progress follows scrolling, throttled: a fast scroll fires a page-change per
+// page crossed, and each one would be a database write plus a redraw. The
+// leading call saves the first page at once and the trailing flush saves the
+// page the reader stopped on.
+const PROGRESS_WINDOW_MS = 800;
+
+async function saveProgress(path, page) {
+  // The page message carries the file that was open when it fired. If the
+  // reader has since switched documents, that path is stale: saving it would
+  // write the old file's page onto a record the user is no longer in, so it
+  // is dropped. openDoc cancels a pending flush for the same reason.
+  if (path !== current || page === (rec(path).page || 0)) return;
+  try {
+    await api("/api/progress", { path, page });
+    await refresh();
+  } catch (e) {
+    toast("保存进度失败：" + e.message);
+  }
+}
+
+const trackProgress = throttle(saveProgress, PROGRESS_WINDOW_MS);
+
+// The page count is known the moment the document loads. It is written once,
+// only when it really differs: the API clamps the saved page to it, so a
+// spurious identical write is a needless disk hit and redraw.
+async function saveTotalPages(path, total) {
+  if (path !== current || !total || total === (rec(path).totalPages || 0)) return;
+  try {
+    await api("/api/totalpages", { path, totalPages: total });
+    await refresh();
+  } catch (e) {
+    toast("保存总页数失败：" + e.message);
+  }
+}
 // The reader frame is rebuilt by renderDetail, so it is looked up per use
 // rather than captured once: a captured one would go stale the moment the
 // detail pane redraws.
@@ -339,12 +385,139 @@ async function loadAnnotations() {
 
 async function addAnnotation(page, kind, data) {
   try {
-    await api("/api/annotations", { path: current, page, kind, data: JSON.stringify(data) });
+    const res = await api("/api/annotations", { path: current, page, kind, data: JSON.stringify(data) });
     await loadAnnotations();
     await refresh();
+    // Entry one (#14): right after a stroke lands, ask once for a note in the
+    // viewer itself, beside the shape. Sent after the re-render below, since
+    // every re-send of the shape map closes a popup the viewer may still hold.
+    if (res.id && !popupMuted) {
+      postToViewer(frame(), Msg.NotePopup, { annId: res.id, page });
+    }
   } catch (e) {
     toast("保存标注失败：" + e.message);
   }
+}
+
+// The viewer answered a popup: text writes the note and links it to the
+// shape; empty text was a skip and closes entry one for this session.
+async function saveNoteForAnnotation(annId, page, text) {
+  if (!text) {
+    popupMuted = true;
+    return;
+  }
+  if (!current) return;
+  try {
+    const note = await api("/api/notes", { path: current, text, page });
+    await api("/api/links", { noteId: note.id, annotationId: annId });
+    await refresh();
+    toast("笔记已保存并关联标注");
+  } catch (e) {
+    toast("保存笔记失败：" + e.message);
+  }
+}
+
+// --- note↔annotation linking (#14) -----------------------------------------
+
+// The stored shape behind an id, with its page: what a note badge needs in
+// order to know where to jump. The map is only ever for the open document,
+// which is also the only document whose notes panel is on screen.
+function findAnnotation(annId) {
+  for (const [page, list] of Object.entries(docAnnotations)) {
+    const hit = (list || []).find((a) => a.id === annId);
+    if (hit) return { id: hit.id, kind: hit.kind, page: Number(page) };
+  }
+  return null;
+}
+
+// Every annotation of the open document, page first then oldest: the order
+// the "挂标注" picker lists them in.
+function allAnnotations() {
+  return Object.entries(docAnnotations)
+    .flatMap(([page, list]) => (list || []).map((a) => ({ ...a, page: Number(page) })))
+    .sort((a, b) => a.page - b.page);
+}
+
+// Jump the viewer to a page; a goto before the bridge is ready is held the
+// same way the page-number box holds one.
+function gotoViewerPage(page) {
+  if (viewerReady) postToViewer(frame(), Msg.Goto, { page });
+  else wantedPage = page;
+}
+
+// Note → annotation: the badge or the note body was clicked. Land on the
+// shape's page, then blink it. The flash waits: the target page renders only
+// after the goto lands, and a blink sent to a shape that is not on screen
+// would find nothing to blink.
+function jumpToAnnotation(annId) {
+  const ann = findAnnotation(annId);
+  if (!ann) return;
+  gotoViewerPage(ann.page);
+  setTimeout(() => postToViewer(frame(), Msg.Flash, { id: ann.id }), 400);
+}
+
+function jumpToNote(note) {
+  const first = (note.annIds || [])[0];
+  if (first) return jumpToAnnotation(first);
+  if (note.page) gotoViewerPage(note.page);
+}
+
+async function linkNoteToAnnotation(noteId, annId) {
+  try {
+    await api("/api/links", { noteId, annotationId: annId });
+    await refresh();
+  } catch (e) {
+    toast("关联失败：" + e.message);
+  }
+}
+
+async function unlinkNoteFromAnnotation(noteId, annId) {
+  try {
+    // The annotation itself is never deleted here, only the link — a shape can
+    // stand without any note.
+    await api("/api/links/delete", { noteId, annotationId: annId });
+    await refresh();
+  } catch (e) {
+    toast("取消关联失败：" + e.message);
+  }
+}
+
+// The "挂标注" picker: every shape on the open document, each row showing
+// whether this note already hangs on it (link / un-link) and how many notes
+// already reference that shape. The reference count is the many-to-many read
+// from the annotation's side — the reverse of the note's own badges.
+function noteLinkPicker(note) {
+  const box = document.createElement("div");
+  box.className = "link-picker";
+  const anns = allAnnotations();
+  if (!anns.length) {
+    box.textContent = "这份文档还没有标注；先用工具划词/画线/框选一条。";
+    return box;
+  }
+  const notes = rec(current).notes || [];
+  for (const ann of anns) {
+    const row = document.createElement("div");
+    row.className = "link-row";
+    const label = document.createElement("span");
+    label.textContent = annLabel(ann);
+    const refs = linkedNotes(notes, ann.id).length;
+    if (refs > 1) {
+      const refCount = document.createElement("span");
+      refCount.className = "link-refs";
+      refCount.textContent = `已被 ${refs} 条笔记引用`;
+      label.append(refCount);
+    }
+    const btn = document.createElement("button");
+    const linked = (note.annIds || []).includes(ann.id);
+    btn.className = "btn sm link";
+    btn.dataset.act = linked ? "unlink-ann" : "link-ann";
+    btn.dataset.id = ann.id;
+    btn.dataset.note = note.id;
+    btn.textContent = linked ? "取消关联" : "关联";
+    row.append(label, btn);
+    box.append(row);
+  }
+  return box;
 }
 
 async function deleteAnnotation(id) {
@@ -372,6 +545,11 @@ function resetReaderState() {
   curPage = 1;
   viewerReady = false;
   wantedPage = 0;
+  popupMuted = false;
+  linkPickerNoteId = null;
+  // A trailing progress flush armed under the previous document must not land
+  // on the one now opening; drop anything still held.
+  trackProgress.cancel();
 }
 
 // Each segment is encoded on its own so '/' keeps naming the path that
@@ -452,10 +630,16 @@ window.addEventListener("message", listener(VIEWER_SRC, (m) => {
     deleteAnnotation(m.id);
     return;
   }
+  if (m.type === Msg.SaveNote) {
+    saveNoteForAnnotation(m.annId, m.page, m.text);
+    return;
+  }
   if (m.type === Msg.Pages) {
     docPages = m.total || 0;
+    saveTotalPages(current, m.total);
   } else if (m.type === Msg.Page) {
     curPage = m.page || 1;
+    trackProgress(current, curPage);
   } else {
     return;
   }
@@ -475,9 +659,9 @@ async function revealCurrent() {
 
 function renderDetail() {
   const el = $("#detail");
-  el.replaceChildren();
 
   if (!current) {
+    el.replaceChildren();
     const empty = document.createElement("div");
     empty.className = "empty";
     empty.style.margin = "auto";
@@ -486,6 +670,22 @@ function renderDetail() {
       : "使用方法：\n1. 点击左上角「选择目录」\n2. 左侧列出所有 PDF，点击即可阅读\n3. 右下角是笔记面板\n4. 数据保存在本地，可随时导出备份";
     el.append(empty);
     return;
+  }
+
+  // The reader frame must survive redraws of the bar and notes panel around
+  // it: rebuilding it would reload the document, which loses the reader's
+  // place (and the scrolled-to page #9's autosave has to observe) and
+  // destroys any in-viewer popup #14 opens inside it. So only the bar and the
+  // panel are replaced when the same document stays open; the frame is
+  // rebuilt only when the document itself changes. A detached iframe reloads
+  // on reattachment, which is why the kept frame is never removed.
+  const existingWrap = el.querySelector(":scope > #pdfWrap");
+  const keepFrame = !!existingWrap && existingWrap.dataset.path === current;
+  if (keepFrame) {
+    el.querySelector(":scope > .reader-top")?.remove();
+    el.querySelector(":scope > .notes-panel")?.remove();
+  } else {
+    el.replaceChildren();
   }
 
   const r = rec(current);
@@ -527,23 +727,27 @@ function renderDetail() {
       <button class="btn sm" id="goto-btn">跳转</button>
     </div>`;
   top.querySelector(".d-path").textContent = current;
-  el.append(top);
+  // When the frame is kept it sits in the element already, and the bar goes
+  // back above it: appending would drop the toolbar under the page.
+  if (keepFrame) el.insertBefore(top, existingWrap);
+  else el.append(top);
 
-  const wrap = document.createElement("div");
-  wrap.id = "pdfWrap";
-  // The iframe lives here rather than in index.html so that every open of a
-  // document starts from a fresh frame: a reused one would keep the previous
-  // document's state until it navigated.
-  const viewerFrame = document.createElement("iframe");
-  viewerFrame.id = "viewer";
-  viewerFrame.title = "PDF 阅读区";
-  // Navigating a fresh frame to the document is what stops thumbnails,
-  // outline, find results and scroll position carrying over from the previous
-  // file: a new URL is a whole new viewer document.
-  viewerFrame.src = "/vendor/pdfjs/web/viewer.html?file=" +
-    encodeURIComponent(filesURL(current));
-  wrap.append(viewerFrame);
-  el.append(wrap);
+  if (!keepFrame) {
+    // A fresh frame navigated at creation is what stops thumbnails, outline,
+    // find results and scroll position carrying over from the previous file:
+    // a new URL is a whole new viewer document. The wrap records the document
+    // it holds so the next redraw can tell "same file" from "switched".
+    const wrap = document.createElement("div");
+    wrap.id = "pdfWrap";
+    wrap.dataset.path = current;
+    const viewerFrame = document.createElement("iframe");
+    viewerFrame.id = "viewer";
+    viewerFrame.title = "PDF 阅读区";
+    viewerFrame.src = "/vendor/pdfjs/web/viewer.html?file=" +
+      encodeURIComponent(filesURL(current));
+    wrap.append(viewerFrame);
+    el.append(wrap);
+  }
 
   const notes = document.createElement("div");
   notes.className = "notes-panel" + (state.ui.notesOpen ? " open" : "");
@@ -602,9 +806,15 @@ function wireDetail(top, notes) {
     if (!btn) return;
     const act = btn.dataset.act;
     if (act === "add-note") await submitNote();
+    else if (act === "save-note") await submitNote();
     else if (act === "cancel-note") { editingNoteId = null; await refresh(); }
     else if (act === "edit-note") startEditNote(btn.dataset.id);
     else if (act === "delete-note") await deleteNote(btn.dataset.id);
+    else if (act === "jump-ann") jumpToAnnotation(btn.dataset.id);
+    else if (act === "jump-note") jumpToNote(rec(current).notes.find((n) => n.id === btn.dataset.id) || { annIds: [], page: null });
+    else if (act === "link-notes") { linkPickerNoteId = linkPickerNoteId === btn.dataset.id ? null : btn.dataset.id; renderNotes(); }
+    else if (act === "link-ann") await linkNoteToAnnotation(btn.dataset.note, btn.dataset.id);
+    else if (act === "unlink-ann") await unlinkNoteFromAnnotation(btn.dataset.note, btn.dataset.id);
   });
 }
 
@@ -675,6 +885,29 @@ function renderNotes() {
     meta.append(time);
     item.append(meta);
 
+    // Entry two (#14): the badges naming the shapes this note hangs on, and
+    // the button that opens the picker for the ones it does not hang on yet.
+    const annIds = n.annIds || [];
+    if (annIds.length) {
+      const badges = document.createElement("div");
+      badges.className = "note-badges";
+      for (const id of annIds) {
+        const ann = findAnnotation(id);
+        const b = document.createElement("button");
+        b.className = "ann-badge";
+        b.dataset.act = "jump-ann";
+        b.dataset.id = id;
+        b.title = "跳回这条标注";
+        // A shape the host no longer has (deleted out from under the note,
+        // or a document that changed underneath) still shows its id rather
+        // than an empty chip: the link exists in the data, and the user has
+        // to be able to see and un-hang it.
+        b.textContent = ann ? annLabel(ann) : "⚯";
+        badges.append(b);
+      }
+      meta.append(badges);
+    }
+
     if (n.id === editingNoteId) {
       const ta = document.createElement("textarea");
       ta.id = "note-text";
@@ -697,6 +930,14 @@ function renderNotes() {
       const body = document.createElement("div");
       body.className = "note-body";
       body.innerHTML = mdToHtml(n.text);
+      if (annIds.length || n.page) {
+        // The note body is a way back to the PDF: it jumps to the first
+        // linked shape, or to its page when there are no shapes.
+        body.classList.add("jumpable");
+        body.dataset.act = "jump-note";
+        body.dataset.id = n.id;
+        body.title = "跳回 PDF 对应位置";
+      }
       item.append(body);
       const actions = document.createElement("div");
       actions.className = "note-actions";
@@ -710,8 +951,16 @@ function renderNotes() {
       del.dataset.act = "delete-note";
       del.dataset.id = n.id;
       del.textContent = "删除";
-      actions.append(edit, del);
+      // Entry two (#14): attach/detach shapes to this note from the panel.
+      const linkBtn = document.createElement("button");
+      linkBtn.className = "btn sm link";
+      linkBtn.dataset.act = "link-notes";
+      linkBtn.dataset.id = n.id;
+      linkBtn.textContent = n.id === linkPickerNoteId ? "收起" : "挂标注";
+      actions.append(edit, del, linkBtn);
       item.append(actions);
+
+      if (n.id === linkPickerNoteId) item.append(noteLinkPicker(n));
     }
     box.append(item);
   }

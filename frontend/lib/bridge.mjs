@@ -15,6 +15,11 @@ export const Msg = {
   Annotations: "annotations", // host -> viewer: {page, annotations:[{id,kind,data}]}
   Add: "add", // viewer -> host: {page, kind, data} the user drew this
   Delete: "delete", // viewer -> host: {id} the user erased this
+
+  // Note <-> annotation linking (#14).
+  NotePopup: "show-note-popup", // host -> viewer: {annId, page} offer a note for the shape just drawn
+  SaveNote: "save-note", // viewer -> host: {annId, page, text}; empty text = skip
+  Flash: "flash", // host -> viewer: {id} blink this shape so its note can be found
 };
 
 // The viewer and the host are same-origin documents, so both directions name

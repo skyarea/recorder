@@ -44,4 +44,66 @@ body.recorder-tool-active:not([data-tool="highlight"]) .pdfViewer .textLayer {
   -webkit-user-select: none;
 }
 
+/* The note popup (#14): anchored beside the shape it was opened for.
+   Its position is set through the CSSOM, which the viewer's CSP allows;
+   everything else — colour, size — lives here, in the one sheet. */
+.recorder-note-popup {
+  position: fixed;
+  z-index: 100000;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
+  border: 1px solid #d1d5db;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  font: 13px/1.5 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+.recorder-note-popup-title {
+  font-weight: 600;
+  font-size: 12.5px;
+  color: #4b5563;
+}
+.recorder-note-popup textarea {
+  min-height: 64px;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font: inherit;
+  color: inherit;
+}
+.recorder-note-popup-foot {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.recorder-note-popup-foot button {
+  padding: 3px 12px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #f3f4f6;
+  color: #111827;
+  font: inherit;
+  cursor: pointer;
+}
+.recorder-note-popup-foot button.primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+/* The blink that locates the shape a note points at: the host asks for it
+   by id after jumping to the page, and the class is on for 1.2s. */
+.recorder-flash {
+  animation: recorder-blink 0.4s ease-in-out 3;
+}
+@keyframes recorder-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
+
 
