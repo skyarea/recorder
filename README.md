@@ -136,6 +136,7 @@ bash scripts/install-hooks.sh
 - **数据不迁移**：不兼容旧版 localStorage 数据（导出 / 导入 JSON 仅作备份功能）
 - **单根目录**：上次扫描的目录记在设置里，启动时自动重扫；文件身份为「根目录相对路径、`/` 分隔」
 - **pdf.js 是 vendored 的第三方源码**：`frontend/vendor/pdfjs/` 保持上游目录结构、原样不动，`VERSION` 记下版本号。升级 = 用新 release 的产物整目录替换（同样精简掉 sourcemap、多余语言、debugger、示例 PDF），再把 `viewer.html` 里那一行 `<script src="../../../viewer-bridge.mjs">` 补回去 —— 那是全树唯一一处本地改动
+- **响应类型由程序自己定，不信操作系统**：`internal/app/contenttypes.go` 固定了 `.html/.css/.js/.mjs/.json/.wasm` 的 Content-Type。Windows 上 Go 先查注册表、查不到才用内置表，任何装过的软件都能把 `.mjs` 登记成 `text/plain`（CI 镜像就是），而浏览器会拒绝按模块执行它、`WebAssembly.instantiateStreaming` 也会直接失败
 
 设计文档在 [`docs/superpowers/specs/`](docs/superpowers/specs/)，
 实现计划在 [`docs/superpowers/plans/`](docs/superpowers/plans/)。

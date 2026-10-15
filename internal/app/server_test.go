@@ -25,8 +25,12 @@ func newTestApp(t *testing.T) (*App, *httptest.Server, string) {
 	t.Cleanup(func() { _ = a.Close() })
 
 	frontend := fstest.MapFS{
-		"frontend/index.html":                  {Data: []byte("<html>real</html>")},
-		"frontend/vendor/pdfjs/web/viewer.mjs": {Data: []byte("export const viewer = 1;\n")},
+		"frontend/index.html":                          {Data: []byte("<html>real</html>")},
+		"frontend/vendor/pdfjs/web/viewer.mjs":         {Data: []byte("export const viewer = 1;\n")},
+		"frontend/vendor/pdfjs/build/pdf.mjs":          {Data: []byte("export const pdf = 1;\n")},
+		"frontend/vendor/pdfjs/web/viewer.css":         {Data: []byte("#viewer{color:red}\n")},
+		"frontend/vendor/pdfjs/web/viewer.html":        {Data: []byte("<html>viewer</html>")},
+		"frontend/vendor/pdfjs/web/wasm/openjpeg.wasm": {Data: []byte("\x00asm\x01\x00\x00\x00")},
 	}
 	srv := httptest.NewServer(a.Routes(frontend))
 	t.Cleanup(srv.Close)
@@ -628,19 +632,29 @@ func TestFilesRouteRejectsTraversal(t *testing.T) {
 	}
 }
 
-func TestStaticServesMjsAsJavascript(t *testing.T) {
+// Chrome enforces the type for module scripts and streamed WebAssembly, so
+// those headers have to be a property of this program rather than of whatever
+// the machine's registry says the extension means.
+func TestStaticServesBrowserEnforcedContentTypes(t *testing.T) {
+	cases := []struct{ path, want string }{
+		{"/vendor/pdfjs/web/viewer.mjs", "text/javascript"},
+		{"/vendor/pdfjs/build/pdf.mjs", "text/javascript"},
+		{"/vendor/pdfjs/web/viewer.css", "text/css"},
+		{"/vendor/pdfjs/web/wasm/openjpeg.wasm", "application/wasm"},
+		{"/vendor/pdfjs/web/viewer.html", "text/html"},
+	}
 	_, srv, _ := newTestApp(t)
-	resp, err := http.Get(srv.URL + "/vendor/pdfjs/web/viewer.mjs")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		t.Fatalf("GET viewer.mjs = %d, want 200", resp.StatusCode)
-	}
-	// A module script served as anything but JavaScript is refused by the
-	// browser, and the viewer never boots.
-	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/javascript") && !strings.HasPrefix(ct, "application/javascript") {
-		t.Fatalf("Content-Type of .mjs = %q, want a JavaScript type", ct)
+	for _, c := range cases {
+		resp, err := http.Get(srv.URL + c.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET %s = %d, want 200", c.path, resp.StatusCode)
+		}
+		if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, c.want) {
+			t.Errorf("Content-Type of %s = %q, want a %q type", c.path, ct, c.want)
+		}
 	}
 }
