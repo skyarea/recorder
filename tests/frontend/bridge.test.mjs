@@ -173,8 +173,10 @@ test("the bridge says nothing until pdf.js has built its event bus", async () =>
   app.start();
   await settled();
   // scalechanging belongs to the annotation overlay: it redraws the
-  // stored normalised shapes at the new zoom.
-  assert.deepEqual(app.topics(), ["pagechanging", "pagesinit", "pagesloaded", "scalechanging"]);
+  // stored normalised shapes at the new zoom. pagerendered does the same
+  // for a page that renders late (scrolling or reopening), so its stored
+  // shapes show up when the page finally arrives.
+  assert.deepEqual(app.topics(), ["pagechanging", "pagerendered", "pagesinit", "pagesloaded", "scalechanging"]);
   assert.deepEqual(env.sent.map((s) => s.msg.type), ["ready"]);
 });
 

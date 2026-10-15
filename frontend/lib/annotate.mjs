@@ -8,7 +8,14 @@
 // frontend/lib/geometry.mjs, which is unit-tested; this file is the wiring
 // that turns a drag or a text selection into that geometry and back.
 import { Msg, postToHost } from "./bridge.mjs";
-import { clientRectToNorm, hitTest, normRectToClient, pointsToNorm } from "./geometry.mjs";
+import {
+  clientRectToNorm,
+  dragRect,
+  hitTest,
+  normRectToClient,
+  pointsToNorm,
+  thinPolyline,
+} from "./geometry.mjs";
 
 const app = globalThis.PDFViewerApplication;
 
@@ -25,11 +32,16 @@ let drag = null;
 
 // --- layers -----------------------------------------------------------------
 
+// The SVG layer over one page, looked up without creating it.
+function findLayer(pageEl) {
+  return pageEl.querySelector(":scope > ." + LAYER_CLASS);
+}
+
 // The SVG layer over one page, created on first use. The page element is the
 // positioning parent (pdf.js gives it position:relative and its own size), so
 // the layer can cover it exactly at any zoom.
 function layerFor(pageEl) {
-  let layer = pageEl.querySelector(":scope > ." + LAYER_CLASS);
+  let layer = findLayer(pageEl);
   if (!layer) {
     layer = document.createElementNS(SVG_NS, "svg");
     layer.setAttribute("class", LAYER_CLASS);
@@ -51,13 +63,11 @@ function pageElFor(pageNumber) {
 }
 
 function pageRectOf(pageEl) {
-  // The viewport is the page's own rectangle in client coordinates, already
-  // accounting for zoom and scroll: exactly the frame normalised coordinates
-  // are relative to.
-  const vp = app.pdfViewer.getPageView(
-    Number(pageEl.dataset.pageNumber) - 1
-  ).viewport;
-  return { x: vp.transform[4], y: vp.transform[5], width: vp.width, height: vp.height };
+  // The page's own rectangle in client coordinates, exactly the frame the
+  // normalised coordinates are relative to. The element's bounding rect
+  // already accounts for zoom and scroll.
+  const r = pageEl.getBoundingClientRect();
+  return { x: r.x, y: r.y, width: r.width, height: r.height };
 }
 
 // --- drawing ----------------------------------------------------------------
@@ -98,12 +108,24 @@ function drawShape(kind, data, pageEl) {
 }
 
 // Redraw one page's layer from the annotations the host sent.
+// A page that has no annotations keeps no layer at all, so a page that
+// renders late (scrolling, reopening) grows one only when it has something
+// to draw.
 function renderPage(pageNumber) {
   const pageEl = pageElFor(pageNumber);
   if (!pageEl) return;
-  const layer = layerFor(pageEl);
+  const anns = annotations[pageNumber] || [];
+  if (!anns.length) {
+    // The host re-sends the full map after every mutation, so a page whose
+    // annotations were all erased stays key-free here as well rather than
+    // accumulating empty entries that redrawAll would walk for nothing.
+    delete annotations[pageNumber];
+    findLayer(pageEl)?.remove();
+    return;
+  }
+  const layer = findLayer(pageEl) || layerFor(pageEl);
   layer.replaceChildren();
-  for (const ann of annotations[pageNumber] || []) {
+  for (const ann of anns) {
     drawShape(ann.kind, ann.data, pageEl);
   }
 }
@@ -115,7 +137,9 @@ function onPointerDown(e) {
   if (!tool) return;
   const pageEl = e.target.closest(".page");
   if (!pageEl) return;
-  e.preventDefault();
+  // The 划词 tool is made *from* the selection, so it must not stop the
+  // pointer from selecting. Drawing tools take the selection away instead.
+  if (tool !== "highlight") e.preventDefault();
   drag = {
     page: Number(pageEl.dataset.pageNumber),
     startX: e.clientX,
@@ -142,6 +166,13 @@ function onPointerMove(e) {
   }
 }
 
+// The two corners of the in-progress drag: a pointer-up that never moved
+// falls back to the down position, so a click stores nothing rather than a
+// degenerate shape.
+function dragCorners() {
+  return [drag.startX, drag.startY, drag.endX ?? drag.startX, drag.endY ?? drag.startY];
+}
+
 function onPointerUp(e) {
   window.removeEventListener("pointermove", onPointerMove);
   window.removeEventListener("pointerup", onPointerUp);
@@ -151,18 +182,14 @@ function onPointerUp(e) {
   if (pageEl) {
     const rect = pageRectOf(pageEl);
     if (tool === "line" && drag.points.length > 1) {
+      const pts = thinPolyline(drag.points, 4);
       postToHost(Msg.Add, {
         page: drag.page,
         kind: "line",
-        data: { points: pointsToNorm(rect, drag.points) },
+        data: { points: pointsToNorm(rect, pts) },
       });
     } else if (tool === "box") {
-      const n = clientRectToNorm(rect, {
-        x: Math.min(drag.startX, drag.endX ?? drag.startX),
-        y: Math.min(drag.startY, drag.endY ?? drag.startY),
-        width: Math.abs((drag.endX ?? drag.startX) - drag.startX),
-        height: Math.abs((drag.endY ?? drag.startY) - drag.startY),
-      });
+      const n = clientRectToNorm(rect, dragRect(...dragCorners()));
       if (n.w > 0 && n.h > 0) {
         postToHost(Msg.Add, { page: drag.page, kind: "box", data: { rect: n } });
       }
@@ -219,13 +246,12 @@ function drawPreview() {
       .map(([x, y]) => `${x - rect.x},${y - rect.y}`).join(" "));
     el.setAttribute("fill", "none");
   } else if (tool === "box") {
+    const r = dragRect(...dragCorners());
     el = document.createElementNS(SVG_NS, "rect");
-    const x = Math.min(drag.startX, drag.endX ?? drag.startX) - rect.x;
-    const y = Math.min(drag.startY, drag.endY ?? drag.startY) - rect.y;
-    el.setAttribute("x", x);
-    el.setAttribute("y", y);
-    el.setAttribute("width", Math.abs((drag.endX ?? drag.startX) - drag.startX));
-    el.setAttribute("height", Math.abs((drag.endY ?? drag.startY) - drag.startY));
+    el.setAttribute("x", r.x - rect.x);
+    el.setAttribute("y", r.y - rect.y);
+    el.setAttribute("width", r.width);
+    el.setAttribute("height", r.height);
     el.setAttribute("fill", "none");
   }
   if (el) {
@@ -274,6 +300,11 @@ export function start() {
   window.addEventListener("message", onMessage);
   app.eventBus.on("pagesinit", redrawAll);
   app.eventBus.on("scalechanging", () => setTimeout(redrawAll, 0));
+  // A page that renders late (scrolling, zoom re-render) gets its layer here,
+  // so an annotation drawn before the page was on screen shows up on arrival.
+  app.eventBus.on("pagerendered", (e) => {
+    renderPage(e.pageNumber);
+  });
 
   // The overlay listens on the viewer container rather than on each page, so
   // a page rendered later (scrolling down) is covered without re-wiring.
@@ -285,26 +316,17 @@ export function start() {
 // under node with no DOM. Exporting start() keeps the side effect where a
 // document actually exists.
 
-// The overlay's styles are injected rather than linked, so the vendored
-// viewer.html keeps exactly one local edit (the bridge script tag) and
-// upgrading pdf.js stays a directory swap plus that one line.
+// The overlay's styles are linked rather than injected as a <style> block:
+// the vendored viewer.html ships a CSP that refuses inline styles, so the
+// sheet has to be a same-origin file. The link itself is injected, which
+// keeps the vendored viewer.html down to its one local edit (the bridge
+// script tag) and upgrading pdf.js stays a directory swap plus that line.
 function installStyles() {
   if (document.getElementById("recorder-annotate-styles")) return;
-  const style = document.createElement("style");
-  style.id = "recorder-annotate-styles";
-  style.textContent = `
-    .recorder-ann { pointer-events: none; }
-    .recorder-ann-highlight { fill: rgba(250, 204, 21, 0.38); }
-    .recorder-ann-box { stroke: #2563eb; stroke-width: 2; fill: none; }
-    .recorder-ann-line { stroke: #dc2626; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .recorder-preview { pointer-events: none; opacity: .7; }
-    /* A tool is live: the browser's own text selection would fight the
-       overlay, and the crosshair says so before the user drags. */
-    body.recorder-tool-active .pdfViewer { cursor: crosshair; }
-    body.recorder-tool-active .pdfViewer .textLayer { user-select: none; -webkit-user-select: none; }
-    /* Erase mode wants to hit shapes, so the layer takes the pointer. */
-    body.recorder-tool-active[data-tool="erase"] .${LAYER_CLASS} { pointer-events: auto; }
-  `;
-  document.head.append(style);
+  const link = document.createElement("link");
+  link.id = "recorder-annotate-styles";
+  link.rel = "stylesheet";
+  link.href = "/lib/annotate.css";
+  document.head.append(link);
 }
 

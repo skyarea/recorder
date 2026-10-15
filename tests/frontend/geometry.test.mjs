@@ -12,6 +12,8 @@ import {
   normRectToClient,
   pointsToNorm,
   hitTest,
+  dragRect,
+  thinPolyline,
 } from "../../frontend/lib/geometry.mjs";
 
 const page = { x: 100, y: 50, width: 400, height: 800 };
@@ -197,4 +199,48 @@ test("hitTest accepts a box's single rect", () => {
   const box = { kind: "box", data: { rect: { x: 0.2, y: 0.2, w: 0.4, h: 0.4 } } };
   assert.equal(hitTest(box, 0.4, 0.4), true);
   assert.equal(hitTest(box, 0.1, 0.4), false);
+});
+
+// dragRect turns the two corners of a box drag into the rectangle between
+// them (#12). A drag may go any direction — right-to-left, bottom-to-top —
+// and must produce the same rect.
+test("dragRect builds the same rect whichever way the drag went", () => {
+  assert.deepEqual(dragRect(10, 20, 110, 80), { x: 10, y: 20, width: 100, height: 60 });
+  assert.deepEqual(dragRect(110, 80, 10, 20), { x: 10, y: 20, width: 100, height: 60 });
+  assert.deepEqual(dragRect(110, 20, 10, 80), { x: 10, y: 20, width: 100, height: 60 });
+  assert.deepEqual(dragRect(10, 80, 110, 20), { x: 10, y: 20, width: 100, height: 60 });
+});
+
+test("dragRect of a press without movement is empty", () => {
+  // A click that never drags is not a box: zero width and height, which the
+  // tool then refuses to store.
+  assert.deepEqual(dragRect(50, 50, 50, 50), { x: 50, y: 50, width: 0, height: 0 });
+});
+
+// thinPolyline is the freehand sampler (#11): a stroke is stored with a
+// point only where it has travelled at least minDist since the last kept
+// point, so a held-steady or fast scribbling pointer cannot flood the
+// annotation with near-duplicate points.
+test("thinPolyline keeps points minDist apart along a dense path", () => {
+  const pts = [];
+  for (let i = 0; i <= 10; i++) pts.push([i, 0]);
+  assert.deepEqual(thinPolyline(pts, 4), [[0, 0], [4, 0], [8, 0]]);
+});
+
+test("thinPolyline leaves an already-sparse stroke untouched", () => {
+  const pts = [[0, 0], [10, 0], [20, 10]];
+  assert.deepEqual(thinPolyline(pts, 4), pts);
+});
+
+test("thinPolyline drops sub-minDist jitter but keeps the shape", () => {
+  // A wobble whose steps are all under minDist must not drag the stored
+  // stroke along with it: the endpoints of the kept points carry the line.
+  const pts = [[0, 0], [1, 1], [2, 0], [3, 1], [4, 0]];
+  assert.deepEqual(thinPolyline(pts, 2), [[0, 0], [2, 0], [4, 0]]);
+});
+
+test("thinPolyline handles empty, single and duplicate points", () => {
+  assert.deepEqual(thinPolyline([], 4), []);
+  assert.deepEqual(thinPolyline([[5, 5]], 4), [[5, 5]]);
+  assert.deepEqual(thinPolyline([[0, 0], [0, 0], [0, 0]], 4), [[0, 0]]);
 });

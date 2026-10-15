@@ -67,6 +67,40 @@ export function pointsToNorm(page, points) {
 }
 
 /**
+ * dragRect turns the two corners of a drag into the rectangle between them,
+ * whichever directions the drag went: right-to-left and bottom-to-top drags
+ * produce the same rect as their opposites. A press that never moved yields
+ * a zero-size rect, which the box tool then refuses to store.
+ */
+export function dragRect(x0, y0, x1, y1) {
+  return {
+    x: Math.min(x0, x1),
+    y: Math.min(y0, y1),
+    width: Math.abs(x1 - x0),
+    height: Math.abs(y1 - y0),
+  };
+}
+
+/**
+ * thinPolyline samples a freehand stroke: a point is kept only once the
+ * stroke has travelled at least minDist (client pixels) since the last kept
+ * point. Point order is preserved and the first point always stays, so the
+ * stored stroke starts exactly where the drag began while a pointer that
+ * hovers, wobbles or fires far more often than it moves cannot flood the
+ * annotation with near-duplicate points.
+ */
+export function thinPolyline(points, minDist) {
+  const out = [];
+  for (const p of points) {
+    const last = out[out.length - 1];
+    if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) >= minDist) {
+      out.push(p);
+    }
+  }
+  return out;
+}
+
+/**
  * hitTest reports whether the normalised point (nx, ny) is on the annotation.
  *
  * It takes the stored annotation ({kind, data}) or its data alone, and the

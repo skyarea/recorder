@@ -1,0 +1,47 @@
+/* The annotation overlay's styles.
+   Served as a real file under the viewer's CSP ("style-src 'self'") —
+   the vendored viewer.html refuses inline <style> blocks, and the overlay
+   must stay the one line added to that file. */
+
+/* Shapes are passive: they never grab the pointer, except in erase mode
+   where the layer itself takes it so a click lands where the user aimed. */
+.recorder-ann {
+  pointer-events: none;
+}
+.recorder-ann-highlight {
+  fill: rgba(250, 204, 21, 0.38);
+}
+.recorder-ann-box {
+  stroke: #2563eb;
+  stroke-width: 2;
+  fill: none;
+}
+.recorder-ann-line {
+  stroke: #dc2626;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+/* The in-progress shape: visible but clearly not final. */
+.recorder-preview {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+/* A tool is live: the crosshair says so before the user drags. Drawing
+   tools take the text selection away so it does not fight the overlay;
+   划词 (highlight) keeps it, because it is made *from* the selection. */
+body.recorder-tool-active .pdfViewer {
+  cursor: crosshair;
+}
+body.recorder-tool-active:not([data-tool="highlight"]) .pdfViewer .textLayer {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Erase mode: the layer takes the pointer so clicks hit where they land. */
+body.recorder-tool-active[data-tool="erase"] .recorder-annotations {
+  pointer-events: auto;
+}

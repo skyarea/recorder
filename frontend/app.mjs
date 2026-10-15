@@ -17,8 +17,8 @@ const STATUS = {
 };
 const STATUS_KEYS = ["todo", "reading", "done", "skip"];
 
-// The annotation tools. Only the first ships in #10; the rest arrive with
-// #11 and #12, which reuse the same overlay and geometry.
+// The annotation tools. All four ship: 划词 (#10), 画线 (#11), 框选 (#12)
+// and 擦除 (#13), all reusing the same overlay and geometry.
 const TOOLS = [
   { id: "highlight", label: "划词", hint: "选中文字后松开，得到高亮" },
   { id: "line", label: "画线", hint: "按住拖动，画自由曲线" },
