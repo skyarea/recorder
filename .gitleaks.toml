@@ -1,0 +1,16 @@
+title = "recorder secret scan"
+
+# 默认规则全部保留：本配置只做「追加豁免」，不做「替换规则集」。
+[extend]
+useDefault = true
+
+# frontend/vendor/** 逐字节来自 pdf.js 官方发布物（Release dist zip，
+# 版本钉在 frontend/vendor/pdfjs/VERSION）。它是第三方 minified 资源，
+# 熵值规则会对打包产物里的长 base64 / wasm 常量误报，而它没有任何
+# 本项目机密可言 —— 升级方式就是整目录替换。
+# 豁免只给这一个目录；仓库其余部分照常严格扫描。
+[allowlist]
+description = "vendored third-party pdf.js release artifacts"
+paths = [
+    '''^frontend/vendor/''',
+]
