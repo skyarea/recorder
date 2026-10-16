@@ -165,6 +165,35 @@ async function toggleTheme() {
   }
 }
 
+// --- sidebar (#24) -----------------------------------------------------------
+
+// The collapse lives on <body> so one CSS rule can hide #sidebar entirely
+// and let the reading area widen; the tree itself never needs to know. The
+// API answers sidebarOpen=true until the user collapses it, so only an
+// explicit false hides the panel.
+function applySidebar() {
+  const collapsed = !!(state && state.ui && !state.ui.sidebarOpen);
+  document.body.classList.toggle("sidebar-collapsed", collapsed);
+}
+
+async function toggleSidebar() {
+  // Optimistic: the snapshot and the class flip together, before the round
+  // trip, so a second click chains off the first one's target rather than a
+  // stale value. The write follows; a failed one rolls both back to what
+  // the server still holds, so the view never claims a state the server
+  // refused to store.
+  const prev = state.ui.sidebarOpen;
+  state.ui.sidebarOpen = !prev;
+  document.body.classList.toggle("sidebar-collapsed", prev);
+  try {
+    await api("/api/ui", { sidebarOpen: state.ui.sidebarOpen });
+  } catch (e) {
+    state.ui.sidebarOpen = prev;
+    applySidebar();
+    toast("切换侧边栏失败：" + e.message);
+  }
+}
+
 // --- tree -------------------------------------------------------------------
 
 function renderTree() {
@@ -201,7 +230,15 @@ function renderNode(node, parentEl, depth, forceOpen) {
   for (const child of node.dirs.values()) {
     if (!hasMatch(child, matchFn)) continue;
 
-    const collapsed = !forceOpen && state.ui.collapsed.includes(child.path);
+    // #24: state.ui.collapsed keeps its JSON key but now lists the
+    // directories the user explicitly EXPANDED — it used to list the
+    // folded ones. The flip lets an empty list mean "everything closed",
+    // so the tree opens on the chain from the root to the document being
+    // read instead of on every folder, while the backend keeps storing the
+    // same list under the same key (zero server change).
+    const collapsed = !forceOpen &&
+      !state.ui.collapsed.includes(child.path) &&
+      !holdsCurrent(child.path);
     const row = document.createElement("div");
     row.className = "node dir";
     row.style.paddingLeft = 8 + depth * 13 + "px";
@@ -234,6 +271,13 @@ function renderNode(node, parentEl, depth, forceOpen) {
   }
 }
 
+// #24: a directory holding the open document stays expanded, so the path
+// from the root to what is on screen never folds away mid-read. The trailing
+// "/" keeps "b2/c.pdf" from matching the sibling folder "b".
+function holdsCurrent(dirPath) {
+  return !!current && current.startsWith(dirPath + "/");
+}
+
 const dot = (color) => span("dot", "●", color);
 const folderIcon = () => span("tw", "📁");
 const tw = (collapsed) => span("tw", collapsed ? "▸" : "▾");
@@ -254,6 +298,9 @@ function nameSpan(text) {
 }
 
 async function toggleCollapsed(path) {
+  // The stored list now holds explicitly expanded directories (#24), so the
+  // click still flips membership — the same POST as before, only the
+  // meaning of the paths inverted.
   const list = state.ui.collapsed.slice();
   const i = list.indexOf(path);
   if (i >= 0) list.splice(i, 1); else list.push(path);
@@ -1133,6 +1180,7 @@ function installShortcuts() {
 
 function renderAll() {
   applyTheme();
+  applySidebar();
   renderStats();
   renderTree();
   renderNotice();
@@ -1161,6 +1209,7 @@ function install() {
     renderTree();
   });
   $("#theme-btn").addEventListener("click", toggleTheme);
+  $("#sidebar-btn").addEventListener("click", toggleSidebar);
   $("#export-btn").addEventListener("click", exportJSON);
   $("#import-input").addEventListener("change", (e) => {
     importJSON(e.target.files[0]);

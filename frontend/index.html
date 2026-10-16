@@ -95,6 +95,9 @@
     width:300px; flex:0 0 300px; overflow:auto; background:var(--panel);
     border-right:1px solid var(--border); padding:8px 6px 40px;
   }
+  /* #24: a collapsed sidebar takes no space at all (display:none rather
+     than a shrunken width), so #detail (flex:1) widens over its 300px. */
+  body.sidebar-collapsed #sidebar{display:none}
   #detail{flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden}
 
   .node{
@@ -257,6 +260,7 @@
 <body>
 
 <header id="topbar">
+  <button class="btn" id="sidebar-btn" title="收起/展开目录">☰</button>
   <button class="btn primary" id="pick">选择目录</button>
   <span id="rootName" class="root-name"></span>
   <div id="stats" class="stats"></div>

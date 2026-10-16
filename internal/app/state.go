@@ -46,6 +46,9 @@ type uiView struct {
 	Collapsed []string `json:"collapsed"`
 	Filter    string   `json:"filter"`
 	NotesOpen bool     `json:"notesOpen"`
+	// SidebarOpen defaults to true: the setting is written only when the
+	// user collapses the sidebar, so a fresh install starts with it visible.
+	SidebarOpen bool `json:"sidebarOpen"`
 	// Theme is the user's explicit choice, "light" or "dark". Empty means
 	// they have not chosen, and the shell follows the system instead.
 	Theme string `json:"theme"`
@@ -163,11 +166,12 @@ func (a *App) orphanCount(st stateView) int {
 }
 
 const (
-	settingRootPath    = "root_path"
-	settingUICollapsed = "ui_collapsed"
-	settingUIFilter    = "ui_filter"
-	settingUINotesOpen = "ui_notes_open"
-	settingUITheme     = "ui_theme"
+	settingRootPath      = "root_path"
+	settingUICollapsed   = "ui_collapsed"
+	settingUIFilter      = "ui_filter"
+	settingUINotesOpen   = "ui_notes_open"
+	settingUISidebarOpen = "ui_sidebar_open"
+	settingUITheme       = "ui_theme"
 )
 
 func (a *App) rootName() string {
@@ -184,7 +188,8 @@ func (a *App) rootName() string {
 }
 
 func (a *App) uiState() (uiView, error) {
-	v := uiView{Collapsed: []string{}}
+	// SidebarOpen starts true: absent setting means the sidebar is open.
+	v := uiView{Collapsed: []string{}, SidebarOpen: true}
 	if s, ok, err := a.store.Setting(settingUICollapsed); err != nil {
 		return v, err
 	} else if ok && s != "" {
@@ -201,6 +206,11 @@ func (a *App) uiState() (uiView, error) {
 		return v, err
 	} else if ok {
 		v.NotesOpen = s == "true"
+	}
+	if s, ok, err := a.store.Setting(settingUISidebarOpen); err != nil {
+		return v, err
+	} else if ok {
+		v.SidebarOpen = s == "true"
 	}
 	if s, ok, err := a.store.Setting(settingUITheme); err != nil {
 		return v, err
