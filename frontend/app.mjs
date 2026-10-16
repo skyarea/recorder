@@ -211,7 +211,10 @@ function renderTree() {
     return;
   }
 
-  const forceOpen = !!query || state.ui.filter !== "all";
+  // An empty filter means "all" (the API's default is "", not "all"), and
+  // either way it is not a narrowing filter — only a real one or a query
+  // forces the tree open (#24).
+  const forceOpen = !!query || (!!state.ui.filter && state.ui.filter !== "all");
   const tree = buildTree(visiblePaths());
   if (!hasMatch(tree, matchFn)) {
     const empty = document.createElement("div");
@@ -329,7 +332,12 @@ function renderStats() {
 
   const chip = (key, color, label, n) => {
     const b = document.createElement("button");
-    b.className = "chip" + (state.ui.filter === key ? " on" : "");
+    // The API's default filter is "" and a click on 全部 stores "all" —
+    // both mean "everything", so both light the chip (#27).
+    const on = key === "all"
+      ? !state.ui.filter || state.ui.filter === "all"
+      : state.ui.filter === key;
+    b.className = "chip" + (on ? " on" : "");
     b.dataset.filter = key;
     if (color) {
       const i = document.createElement("i");
