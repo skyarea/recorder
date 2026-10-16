@@ -685,6 +685,9 @@ function renderDetail() {
 
   const top = document.createElement("div");
   top.className = "reader-top";
+  // #26: two rows, not four. Row one is the document and its actions; row two
+  // carries status, tools and paging, and may wrap internally (.rt-row wraps)
+  // so a 1366px window shrinks the bar instead of overflowing it.
   top.innerHTML = `
     <div class="rt-row">
       <span class="d-path"></span>
@@ -698,14 +701,10 @@ function renderDetail() {
                 style="--c:${STATUS[k].color}">
           <span class="dot">${STATUS[k].dot}</span>${STATUS[k].label}<kbd>${i + 1}</kbd>
         </button>`).join("")}
-    </div>
-    <div class="rt-row">
       <span class="muted small">标注</span>
       ${TOOLS.map((t) => `
         <button class="tbtn${activeTool === t.id ? " on" : ""}" data-act="tool" data-v="${t.id}"
                 title="${t.hint}">${t.label}</button>`).join("")}
-    </div>
-    <div class="rt-row">
       <label class="page-row">页码 <input type="number" min="0" id="page-input" value="${r.page || 0}"></label>
       <span class="muted small">/</span>
       <label class="page-row">总页数 <input type="number" min="0" id="total-input" value="${r.totalPages || 0}"></label>

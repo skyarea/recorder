@@ -111,13 +111,16 @@
   .node .star{color:#f59e0b; font-size:11px}
   .empty{padding:30px 16px; color:var(--muted); text-align:center; font-size:13.5px; line-height:1.9}
 
+  /* #26: the bar is two rows — path + actions, then everything else, which
+     is allowed to wrap. Paddings are trimmed so the pair stays shorter than
+     the old four rows even when the second row wraps at 1366px wide. */
   .reader-top{
-    flex:0 0 auto; padding:8px 14px 10px; background:var(--panel);
+    flex:0 0 auto; padding:6px 14px; background:var(--panel);
     border-bottom:1px solid var(--border);
   }
-  .rt-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
-  .rt-row + .rt-row{margin-top:7px}
-  .d-path{font-size:14px; font-weight:600; word-break:break-all; flex:1; min-width:0}
+  .rt-row{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+  .rt-row + .rt-row{margin-top:5px}
+  .d-path{font-size:15.5px; font-weight:600; word-break:break-all; flex:1; min-width:0}
   .muted{color:var(--muted)}
   .small{font-size:12.5px}
   .star-btn{
@@ -130,7 +133,7 @@
 
   .stbtn{
     display:inline-flex; align-items:center; gap:5px;
-    padding:3px 10px; border-radius:99px; border:1px solid var(--border);
+    padding:2px 9px; border-radius:99px; border:1px solid var(--border);
     background:var(--panel); cursor:pointer; transition:.15s; font-size:12.5px;
   }
   .stbtn:hover{background:var(--hover)}
@@ -142,7 +145,7 @@
   }
   .tbtn{
     display:inline-flex; align-items:center; gap:4px;
-    padding:3px 10px; border-radius:99px; border:1px solid var(--border);
+    padding:2px 9px; border-radius:99px; border:1px solid var(--border);
     background:var(--panel); cursor:pointer; transition:.15s; font-size:12.5px;
   }
   .tbtn:hover{background:var(--hover)}
