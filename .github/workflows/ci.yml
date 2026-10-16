@@ -1,5 +1,9 @@
 name: CI
 
+# action 版本对齐 Node 24 运行时（issue #29）：GitHub 已弃用 Node 20，
+# 未迁移的 action 会在弃用完成后直接失败。升级时四个 workflow 一起改，
+# 避免同一个 action 在不同文件里版本漂移。
+
 on:
   push:
     branches: [main]
@@ -18,9 +22,9 @@ jobs:
     name: build / test / vet
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
