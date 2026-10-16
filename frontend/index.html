@@ -6,16 +6,24 @@
 <link rel="icon" href="/favicon.ico" sizes="any">
 <title>PDF 阅读进度 · 笔记</title>
 <style>
+  /* #27 layering tokens: --stage is the dark canvas the PDF page sits on
+     in BOTH themes (the page is the focus, so the surround goes dark even
+     in light mode); --accent-solid is a fill dark enough to carry white
+     text in either theme, unlike the dark theme's light-blue --accent. */
   :root{
     --bg:#f5f6f8; --panel:#fff; --border:#e5e7eb; --text:#111827; --muted:#6b7280;
     --accent:#2563eb; --accent-soft:#eef4ff; --hover:#f3f4f6;
+    --stage:#3c3f41; --accent-solid:#2563eb; --on-accent:#fff;
     --radius:8px; --shadow:0 1px 2px rgba(0,0,0,.05);
+    --shadow-lift:0 2px 10px rgba(15,23,42,.08);
   }
   @media (prefers-color-scheme:dark){
     :root{
       --bg:#0b1220; --panel:#111a2b; --border:#25324a; --text:#e6eaf2; --muted:#8b98ad;
       --accent:#60a5fa; --accent-soft:#16233c; --hover:#182236;
+      --stage:#070b13; --accent-solid:#2563eb; --on-accent:#fff;
       --shadow:0 1px 2px rgba(0,0,0,.4);
+      --shadow-lift:0 2px 12px rgba(0,0,0,.55);
     }
   }
   /* An explicit choice outranks the system preference, so the two blocks
@@ -23,12 +31,16 @@
   html[data-theme="light"]{
     --bg:#f5f6f8; --panel:#fff; --border:#e5e7eb; --text:#111827; --muted:#6b7280;
     --accent:#2563eb; --accent-soft:#eef4ff; --hover:#f3f4f6;
+    --stage:#3c3f41; --accent-solid:#2563eb; --on-accent:#fff;
     --shadow:0 1px 2px rgba(0,0,0,.05);
+    --shadow-lift:0 2px 10px rgba(15,23,42,.08);
   }
   html[data-theme="dark"]{
     --bg:#0b1220; --panel:#111a2b; --border:#25324a; --text:#e6eaf2; --muted:#8b98ad;
     --accent:#60a5fa; --accent-soft:#16233c; --hover:#182236;
+    --stage:#070b13; --accent-solid:#2563eb; --on-accent:#fff;
     --shadow:0 1px 2px rgba(0,0,0,.4);
+    --shadow-lift:0 2px 12px rgba(0,0,0,.55);
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
@@ -44,10 +56,12 @@
     padding:1px 6px; font-size:12px; font-family:ui-monospace,monospace;
   }
 
+  /* #27: panels separate by shadow (a lifted plane), not by hairlines. */
   #topbar{
     display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-    padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--border);
-    flex:0 0 auto;
+    padding:8px 12px; background:var(--panel);
+    box-shadow:var(--shadow-lift); flex:0 0 auto;
+    position:relative; z-index:20;
   }
   .btn{
     display:inline-flex; align-items:center; gap:6px;
@@ -76,7 +90,9 @@
     background:var(--panel); cursor:pointer; font-size:12.5px; transition:.15s;
   }
   .chip:hover{background:var(--hover)}
-  .chip.on{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); font-weight:600}
+  /* #27: an active filter is a filled pill — the one glanceable state in
+     the topbar, so it gets the solid accent rather than a tint. */
+  .chip.on{background:var(--accent-solid); border-color:var(--accent-solid); color:var(--on-accent); font-weight:600}
   .chip b{font-weight:600}
   .chip i{width:7px;height:7px;border-radius:50%;display:inline-block}
 
@@ -93,8 +109,11 @@
   main{flex:1; display:flex; overflow:hidden}
   #sidebar{
     width:300px; flex:0 0 300px; overflow:auto; background:var(--panel);
-    border-right:1px solid var(--border); padding:8px 6px 40px;
+    box-shadow:var(--shadow-lift); padding:8px 6px 40px;
   }
+  /* #24: a collapsed sidebar takes no space at all (display:none rather
+     than a shrunken width), so #detail (flex:1) widens over its 300px. */
+  body.sidebar-collapsed #sidebar{display:none}
   #detail{flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden}
 
   .node{
@@ -105,19 +124,21 @@
   .node:hover{background:var(--hover)}
   .node .nm{overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0}
   .node.dir{font-weight:600; color:var(--muted)}
-  .node.file.active{background:var(--accent-soft); color:var(--accent); font-weight:600}
+  .node.file.active{background:var(--accent-solid); color:var(--on-accent); font-weight:600}
   .node .tw{width:12px; text-align:center; font-size:10px; color:var(--muted); flex:0 0 12px}
   .node .dot{flex:0 0 auto; font-size:11px; line-height:1}
   .node .star{color:#f59e0b; font-size:11px}
   .empty{padding:30px 16px; color:var(--muted); text-align:center; font-size:13.5px; line-height:1.9}
 
+  /* #26: the bar is two rows — path + actions, then everything else, which
+     is allowed to wrap. Paddings are trimmed so the pair stays shorter than
+     the old four rows even when the second row wraps at 1366px wide. */
   .reader-top{
-    flex:0 0 auto; padding:8px 14px 10px; background:var(--panel);
-    border-bottom:1px solid var(--border);
+    flex:0 0 auto; padding:6px 14px; background:var(--panel);
   }
-  .rt-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
-  .rt-row + .rt-row{margin-top:7px}
-  .d-path{font-size:14px; font-weight:600; word-break:break-all; flex:1; min-width:0}
+  .rt-row{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+  .rt-row + .rt-row{margin-top:5px}
+  .d-path{font-size:15.5px; font-weight:600; word-break:break-all; flex:1; min-width:0}
   .muted{color:var(--muted)}
   .small{font-size:12.5px}
   .star-btn{
@@ -130,23 +151,27 @@
 
   .stbtn{
     display:inline-flex; align-items:center; gap:5px;
-    padding:3px 10px; border-radius:99px; border:1px solid var(--border);
+    padding:2px 9px; border-radius:99px; border:1px solid var(--border);
     background:var(--panel); cursor:pointer; transition:.15s; font-size:12.5px;
   }
   .stbtn:hover{background:var(--hover)}
   .stbtn .dot{color:var(--c)}
-  .stbtn.on{border-color:var(--c); background:var(--accent-soft); font-weight:600}
+  /* #27: the chosen status fills with its own colour and takes dark ink —
+     the four status hues are all light enough for #0f172a to stay readable
+     on them, where white text would not be. */
+  .stbtn.on{border-color:var(--c); background:var(--c); color:#0f172a; font-weight:600}
+  .stbtn.on .dot{color:#0f172a}
   .stbtn kbd{
     font-size:10px; opacity:.4; border:1px solid currentColor; border-radius:3px;
     padding:0 3px; font-family:ui-monospace,monospace; background:none;
   }
   .tbtn{
     display:inline-flex; align-items:center; gap:4px;
-    padding:3px 10px; border-radius:99px; border:1px solid var(--border);
+    padding:2px 9px; border-radius:99px; border:1px solid var(--border);
     background:var(--panel); cursor:pointer; transition:.15s; font-size:12.5px;
   }
   .tbtn:hover{background:var(--hover)}
-  .tbtn.on{border-color:var(--accent); background:var(--accent-soft); color:var(--accent); font-weight:600}
+  .tbtn.on{border-color:var(--accent-solid); background:var(--accent-solid); color:var(--on-accent); font-weight:600}
   .page-row{display:inline-flex; align-items:center; gap:5px; font-size:13px}
   .page-row input{
     width:64px; padding:3px 7px; border:1px solid var(--border);
@@ -156,14 +181,44 @@
   .mini-bar{width:80px;height:5px;border-radius:99px;background:var(--hover);overflow:hidden}
   .mini-bar i{display:block;height:100%;background:var(--accent)}
 
-  #pdfWrap{flex:1; min-height:0; position:relative; background:#525659}
+  /* #27: the stage. The PDF page is the focus, so its surround is the
+     darkest plane in either theme — light mode included. */
+  #pdfWrap{flex:1; min-height:0; position:relative; background:var(--stage)}
   #viewer{width:100%; height:100%; border:0; display:block}
 
+  /* #25: the notes panel is a drawer over the right edge, not a row under
+     the page. It is position:fixed, so opening it can neither reflow nor
+     reload the reader frame: the PDF keeps its place (#14's in-viewer
+     popups included). The top offset is measured in JS because the topbar
+     wraps and the notice bar appears and disappears. */
   .notes-panel{
-    flex:0 0 auto; background:var(--panel); border-top:1px solid var(--border);
-    display:flex; flex-direction:column; max-height:45%;
+    position:fixed; top:0; right:0; bottom:0;
+    width:min(360px, 90vw);
+    background:var(--panel); border-left:1px solid var(--border);
+    box-shadow:var(--shadow), -10px 0 24px rgba(0,0,0,.15);
+    display:flex; flex-direction:column;
+    transform:translateX(100%);
+    transition:transform .25s ease;
+    z-index:40;
   }
-  .notes-panel:not(.open) .notes-inner{display:none}
+  .notes-panel.open{transform:translateX(0)}
+  /* #25: the handle rides the vertical middle of the window's right edge,
+     closed or open, so the drawer is always one click away. Open, it slides
+     left by the drawer's width to sit just outside it instead of hiding
+     underneath. */
+  .notes-tab{
+    position:fixed; right:0; top:50%;
+    transform:translate(0, -50%);
+    writing-mode:vertical-rl;
+    padding:14px 6px; border:1px solid var(--border); border-right:none;
+    border-radius:var(--radius) 0 0 var(--radius);
+    background:var(--panel); color:var(--text); cursor:pointer; user-select:none;
+    box-shadow:var(--shadow), -4px 0 12px rgba(0,0,0,.12);
+    font-size:13px; font-weight:600; z-index:50;
+    transition:transform .25s ease;
+  }
+  .notes-tab:hover{background:var(--hover)}
+  .notes-tab.open{transform:translate(calc(-1 * min(360px, 90vw)), -50%)}
   .notes-bar{
     display:flex; align-items:center; gap:8px; padding:7px 14px;
     cursor:pointer; user-select:none; font-size:13.5px; font-weight:600;
@@ -226,6 +281,7 @@
 <body>
 
 <header id="topbar">
+  <button class="btn" id="sidebar-btn" title="收起/展开目录">☰</button>
   <button class="btn primary" id="pick">选择目录</button>
   <span id="rootName" class="root-name"></span>
   <div id="stats" class="stats"></div>

@@ -197,32 +197,46 @@ h2{
 }
 
 /* ==========================================================================
-   预览图
+   截图
    --------------------------------------------------------------------------
-   图是独立的 .svg 文件，经 <img> 渲染。SVG 在自己的文档里带一套
-   prefers-color-scheme，深浅两种模式各自适配 —— 不需要页面替它操心，
-   也不会出现「深色页面上贴一张白底图」。
+   真实的运行截图（1440×900 PNG），不是示意图。img 上的 width/height
+   属性就是纵横比来源，加载时不会跳动；样式只管宽度与间距，不给图套底色。
 
-   img 上的 width/height 属性就是纵横比来源，加载时不会跳动；
-   样式只管宽度与间距，不给图套底色或边框：窗口外框 SVG 自己画了。
+   .preview 是首屏大图；.shots 是并列的两联，窄屏自动堆叠。
    ========================================================================== */
 .preview{
   margin:0 0 var(--sp-6);
 }
 
-.preview img{
+.preview img,
+.shots img{
   display:block;
   width:100%;
   height:auto;
+  border-radius:var(--r-md);
 }
 
-.preview figcaption{
+.preview figcaption,
+.shots figcaption{
   color:hsl(var(--c-fg-muted));
   font-size:var(--fs-sm);
   margin:var(--sp-3) var(--sp-1) 0;
   text-align:center;
   max-width:70ch;
   margin-inline:auto;
+}
+
+.shots{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:var(--sp-5);
+  margin:0 0 var(--sp-6);
+}
+
+.shots figure{margin:0}
+
+@media (max-width:900px){
+  .shots{grid-template-columns:minmax(0,1fr)}
 }
 
 /* ==========================================================================
@@ -526,11 +540,26 @@ footer a{color:hsl(var(--c-accent))}
   <p class="meta" id="ver" aria-live="polite">最新版本 v0.0.1</p>
 
   <figure class="preview">
-    <img src="app-preview.svg"
-         alt="recorder 主界面：左侧是标着阅读状态的 PDF 目录树，中间是 PDF 页面，上面有划词高亮、矩形框选和自由画线三种标注，右侧是带标注徽标的笔记面板。"
-         width="1200" height="750" loading="eager" decoding="async">
-    <figcaption>界面示意。三种标注工具在阅读器工具条上，写完笔记可以直接挂到标注上。</figcaption>
+    <img src="screenshots/light-reading.png"
+         alt="recorder 主界面：左侧是标着阅读状态的 PDF 目录树，中间是 PDF 页面，上面有划词高亮、矩形框选和自由画线三种标注，右侧边缘是笔记抽屉把手。"
+         width="1440" height="900" loading="eager" decoding="async">
+    <figcaption>阅读界面：左边是目录树与阅读状态，页面上是划词高亮、矩形框选和自由画线三种标注。</figcaption>
   </figure>
+
+  <div class="shots">
+    <figure>
+      <img src="screenshots/notes-drawer.png"
+           alt="右侧滑出的笔记抽屉：笔记正文支持 Markdown，带「p.1 · 划词」徽标，可点回原文定位。"
+           width="1440" height="900" loading="lazy" decoding="async">
+      <figcaption>笔记抽屉从右侧滑出，不挤压阅读区；徽标把笔记指回原文那一处。</figcaption>
+    </figure>
+    <figure>
+      <img src="screenshots/dark-reading.png"
+           alt="深色主题下的阅读界面：目录树可以收起，让 PDF 占满整屏。"
+           width="1440" height="900" loading="lazy" decoding="async">
+      <figcaption>深色主题，目录树收起后阅读区占满整屏。</figcaption>
+    </figure>
+  </div>
 
   <div class="band" id="download">
     <h2>下载</h2>

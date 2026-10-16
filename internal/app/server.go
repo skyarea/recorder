@@ -451,10 +451,11 @@ func (a *App) handleUnlink(w http.ResponseWriter, r *http.Request) {
 // --- ui state ---------------------------------------------------------------
 
 type uiReq struct {
-	Collapsed *[]string `json:"collapsed"`
-	Filter    *string   `json:"filter"`
-	NotesOpen *bool     `json:"notesOpen"`
-	Theme     *string   `json:"theme"`
+	Collapsed   *[]string `json:"collapsed"`
+	Filter      *string   `json:"filter"`
+	NotesOpen   *bool     `json:"notesOpen"`
+	SidebarOpen *bool     `json:"sidebarOpen"`
+	Theme       *string   `json:"theme"`
 }
 
 // themes are the only values ui_theme may hold. A theme the shell does not
@@ -500,6 +501,16 @@ func (a *App) handleUI(w http.ResponseWriter, r *http.Request) {
 			v = "true"
 		}
 		if err := a.store.SetSetting(settingUINotesOpen, v); err != nil {
+			a.writeState(w, err)
+			return
+		}
+	}
+	if req.SidebarOpen != nil {
+		v := "false"
+		if *req.SidebarOpen {
+			v = "true"
+		}
+		if err := a.store.SetSetting(settingUISidebarOpen, v); err != nil {
 			a.writeState(w, err)
 			return
 		}

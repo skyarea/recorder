@@ -155,6 +155,10 @@ func TestStateShapeAfterScan(t *testing.T) {
 	if ui["filter"] != "" || ui["notesOpen"] != false {
 		t.Errorf("ui = %v, want defaults", ui)
 	}
+	// #24: an absent ui_sidebar_open setting means the sidebar is open.
+	if ui["sidebarOpen"] != true {
+		t.Errorf("ui.sidebarOpen = %v, want default true", ui["sidebarOpen"])
+	}
 	if collapsed, ok := ui["collapsed"].([]any); !ok || len(collapsed) != 0 {
 		t.Errorf("ui.collapsed = %v, want []", ui["collapsed"])
 	}
@@ -360,6 +364,15 @@ func TestMutationsRoundTrip(t *testing.T) {
 		if c := ui["collapsed"].([]any); len(c) != 1 || c[0] != "b" {
 			t.Fatalf("ui.collapsed = %v", ui["collapsed"])
 		}
+	}
+
+	// #24: collapsing the sidebar writes like the other ui flags, and a
+	// fresh GET (not just the POST response) reflects the stored value.
+	if resp, st := post(t, srv, "/api/ui", map[string]any{"sidebarOpen": false}); resp.StatusCode != 200 {
+		t.Fatalf("ui sidebar: %d %v", resp.StatusCode, st)
+	}
+	if ui := stateOf(t, srv)["ui"].(map[string]any); ui["sidebarOpen"] != false {
+		t.Fatalf("ui.sidebarOpen after POST false = %v, want false", ui["sidebarOpen"])
 	}
 }
 

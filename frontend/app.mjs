@@ -165,6 +165,35 @@ async function toggleTheme() {
   }
 }
 
+// --- sidebar (#24) -----------------------------------------------------------
+
+// The collapse lives on <body> so one CSS rule can hide #sidebar entirely
+// and let the reading area widen; the tree itself never needs to know. The
+// API answers sidebarOpen=true until the user collapses it, so only an
+// explicit false hides the panel.
+function applySidebar() {
+  const collapsed = !!(state && state.ui && !state.ui.sidebarOpen);
+  document.body.classList.toggle("sidebar-collapsed", collapsed);
+}
+
+async function toggleSidebar() {
+  // Optimistic: the snapshot and the class flip together, before the round
+  // trip, so a second click chains off the first one's target rather than a
+  // stale value. The write follows; a failed one rolls both back to what
+  // the server still holds, so the view never claims a state the server
+  // refused to store.
+  const prev = state.ui.sidebarOpen;
+  state.ui.sidebarOpen = !prev;
+  document.body.classList.toggle("sidebar-collapsed", prev);
+  try {
+    await api("/api/ui", { sidebarOpen: state.ui.sidebarOpen });
+  } catch (e) {
+    state.ui.sidebarOpen = prev;
+    applySidebar();
+    toast("切换侧边栏失败：" + e.message);
+  }
+}
+
 // --- tree -------------------------------------------------------------------
 
 function renderTree() {
@@ -182,7 +211,10 @@ function renderTree() {
     return;
   }
 
-  const forceOpen = !!query || state.ui.filter !== "all";
+  // An empty filter means "all" (the API's default is "", not "all"), and
+  // either way it is not a narrowing filter — only a real one or a query
+  // forces the tree open (#24).
+  const forceOpen = !!query || (!!state.ui.filter && state.ui.filter !== "all");
   const tree = buildTree(visiblePaths());
   if (!hasMatch(tree, matchFn)) {
     const empty = document.createElement("div");
@@ -201,7 +233,15 @@ function renderNode(node, parentEl, depth, forceOpen) {
   for (const child of node.dirs.values()) {
     if (!hasMatch(child, matchFn)) continue;
 
-    const collapsed = !forceOpen && state.ui.collapsed.includes(child.path);
+    // #24: state.ui.collapsed keeps its JSON key but now lists the
+    // directories the user explicitly EXPANDED — it used to list the
+    // folded ones. The flip lets an empty list mean "everything closed",
+    // so the tree opens on the chain from the root to the document being
+    // read instead of on every folder, while the backend keeps storing the
+    // same list under the same key (zero server change).
+    const collapsed = !forceOpen &&
+      !state.ui.collapsed.includes(child.path) &&
+      !holdsCurrent(child.path);
     const row = document.createElement("div");
     row.className = "node dir";
     row.style.paddingLeft = 8 + depth * 13 + "px";
@@ -234,6 +274,13 @@ function renderNode(node, parentEl, depth, forceOpen) {
   }
 }
 
+// #24: a directory holding the open document stays expanded, so the path
+// from the root to what is on screen never folds away mid-read. The trailing
+// "/" keeps "b2/c.pdf" from matching the sibling folder "b".
+function holdsCurrent(dirPath) {
+  return !!current && current.startsWith(dirPath + "/");
+}
+
 const dot = (color) => span("dot", "●", color);
 const folderIcon = () => span("tw", "📁");
 const tw = (collapsed) => span("tw", collapsed ? "▸" : "▾");
@@ -254,6 +301,9 @@ function nameSpan(text) {
 }
 
 async function toggleCollapsed(path) {
+  // The stored list now holds explicitly expanded directories (#24), so the
+  // click still flips membership — the same POST as before, only the
+  // meaning of the paths inverted.
   const list = state.ui.collapsed.slice();
   const i = list.indexOf(path);
   if (i >= 0) list.splice(i, 1); else list.push(path);
@@ -282,7 +332,12 @@ function renderStats() {
 
   const chip = (key, color, label, n) => {
     const b = document.createElement("button");
-    b.className = "chip" + (state.ui.filter === key ? " on" : "");
+    // The API's default filter is "" and a click on 全部 stores "all" —
+    // both mean "everything", so both light the chip (#27).
+    const on = key === "all"
+      ? !state.ui.filter || state.ui.filter === "all"
+      : state.ui.filter === key;
+    b.className = "chip" + (on ? " on" : "");
     b.dataset.filter = key;
     if (color) {
       const i = document.createElement("i");
@@ -657,7 +712,7 @@ function renderDetail() {
     empty.style.margin = "auto";
     empty.textContent = state.scanned.length
       ? "从左侧选择一个 PDF 开始阅读"
-      : "使用方法：\n1. 点击左上角「选择目录」\n2. 左侧列出所有 PDF，点击即可阅读\n3. 右下角是笔记面板\n4. 数据保存在本地，可随时导出备份";
+      : "使用方法：\n1. 点击左上角「选择目录」\n2. 左侧列出所有 PDF，点击即可阅读\n3. 点击右侧「📝 笔记」把手打开笔记抽屉\n4. 数据保存在本地，可随时导出备份";
     el.append(empty);
     return;
   }
@@ -674,6 +729,7 @@ function renderDetail() {
   if (keepFrame) {
     el.querySelector(":scope > .reader-top")?.remove();
     el.querySelector(":scope > .notes-panel")?.remove();
+    el.querySelector(":scope > .notes-tab")?.remove();
   } else {
     el.replaceChildren();
   }
@@ -684,6 +740,9 @@ function renderDetail() {
 
   const top = document.createElement("div");
   top.className = "reader-top";
+  // #26: two rows, not four. Row one is the document and its actions; row two
+  // carries status, tools and paging, and may wrap internally (.rt-row wraps)
+  // so a 1366px window shrinks the bar instead of overflowing it.
   top.innerHTML = `
     <div class="rt-row">
       <span class="d-path"></span>
@@ -697,14 +756,10 @@ function renderDetail() {
                 style="--c:${STATUS[k].color}">
           <span class="dot">${STATUS[k].dot}</span>${STATUS[k].label}<kbd>${i + 1}</kbd>
         </button>`).join("")}
-    </div>
-    <div class="rt-row">
       <span class="muted small">标注</span>
       ${TOOLS.map((t) => `
         <button class="tbtn${activeTool === t.id ? " on" : ""}" data-act="tool" data-v="${t.id}"
                 title="${t.hint}">${t.label}</button>`).join("")}
-    </div>
-    <div class="rt-row">
       <label class="page-row">页码 <input type="number" min="0" id="page-input" value="${r.page || 0}"></label>
       <span class="muted small">/</span>
       <label class="page-row">总页数 <input type="number" min="0" id="total-input" value="${r.totalPages || 0}"></label>
@@ -765,12 +820,56 @@ function renderDetail() {
     </div>`;
   el.append(notes);
 
+  // #25: the right-edge handle. It sits outside the drawer because a fixed
+  // parent's translateX would carry it off-screen with the drawer, and it is
+  // rebuilt with every renderDetail so its count tracks the open document.
+  const tab = document.createElement("button");
+  tab.className = "notes-tab" + (state.ui.notesOpen ? " open" : "");
+  tab.id = "notesTab";
+  tab.title = state.ui.notesOpen ? "收起笔记" : "打开笔记";
+  tab.textContent = `📝 笔记 ${r.notes.length}`;
+  el.append(tab);
+  positionNotesDrawer();
+
   renderNotes();
   renderPager();
-  wireDetail(top, notes);
+  wireDetail(top, notes, tab);
 }
 
-function wireDetail(top, notes) {
+// #25: the drawer is position:fixed, so its top must track the stacked chrome
+// above main — the topbar wraps to two lines on narrow windows and the notice
+// bar appears and disappears. Measured live, once per render and on resize.
+function positionNotesDrawer() {
+  const panel = $("#notesPanel");
+  const mainEl = document.querySelector("main");
+  if (panel && mainEl) panel.style.top = mainEl.getBoundingClientRect().top + "px";
+}
+window.addEventListener("resize", positionNotesDrawer);
+
+// #25: flipping the class first lets the drawer and its handle slide on the
+// transform transition; waiting for the slide before the refresh keeps the
+// redraw from rebuilding the drawer already in place and cutting the
+// animation short. The timeout guards a transitionend that never fires.
+async function toggleNotes() {
+  state.ui.notesOpen = !state.ui.notesOpen;
+  document.querySelector(".notes-panel")?.classList.toggle("open", state.ui.notesOpen);
+  document.querySelector(".notes-tab")?.classList.toggle("open", state.ui.notesOpen);
+  try {
+    await api("/api/ui", { notesOpen: state.ui.notesOpen });
+  } catch (e) {
+    toast("切换笔记面板失败：" + e.message);
+  }
+  const panel = $(".notes-panel");
+  if (panel) {
+    await new Promise((done) => {
+      panel.addEventListener("transitionend", done, { once: true });
+      setTimeout(done, 350);
+    });
+  }
+  await refresh();
+}
+
+function wireDetail(top, notes, tab) {
   top.addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-act]");
     if (!btn) return;
@@ -788,8 +887,7 @@ function wireDetail(top, notes) {
   notes.addEventListener("click", async (e) => {
     const bar = e.target.closest('[data-act="toggle-notes"]');
     if (bar) {
-      await api("/api/ui", { notesOpen: !state.ui.notesOpen });
-      await refresh();
+      await toggleNotes();
       return;
     }
     const btn = e.target.closest("[data-act]");
@@ -806,6 +904,7 @@ function wireDetail(top, notes) {
     else if (act === "link-ann") await linkNoteToAnnotation(btn.dataset.note, btn.dataset.id);
     else if (act === "unlink-ann") await unlinkNoteFromAnnotation(btn.dataset.note, btn.dataset.id);
   });
+  tab.addEventListener("click", () => toggleNotes());
 }
 
 async function savePage() {
@@ -1089,6 +1188,7 @@ function installShortcuts() {
 
 function renderAll() {
   applyTheme();
+  applySidebar();
   renderStats();
   renderTree();
   renderNotice();
@@ -1117,6 +1217,7 @@ function install() {
     renderTree();
   });
   $("#theme-btn").addEventListener("click", toggleTheme);
+  $("#sidebar-btn").addEventListener("click", toggleSidebar);
   $("#export-btn").addEventListener("click", exportJSON);
   $("#import-input").addEventListener("change", (e) => {
     importJSON(e.target.files[0]);
