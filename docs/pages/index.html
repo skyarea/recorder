@@ -512,19 +512,18 @@ footer a{color:hsl(var(--c-accent))}
   <p class="lede">本地优先的 Windows PDF 阅读器 —— 阅读进度、笔记与标注，数据都存在你自己的电脑上。</p>
 
   <!--
-    HTML 里的默认状态就是「还没发布」那一档，而不是「正在读取」。
-    这样禁用 JS 的人看到的是实情，不至于停在一句永远的「正在读取…」上；
-    JS 跑起来发现有 release，再把它升级成真正的下载态。
+    HTML 里的默认状态要是一个静态的实情，而不是「正在读取」——禁用 JS 的
+    人看到的不能是一句永远转不完的占位。默认值写的是当前已发布的版本
+    （v0.0.1）；JS 跑起来再拉 releases/latest，把它刷成真正的最新下载链。
 
-    留给后来的人：仓库一旦打了第一个 tag，就要把这段 HTML 的默认值
-    换成「已发布」那一档 —— 否则禁用 JS 的访客会看到一句已经不成立的话。
-    在那之前，这里的默认值就是当前仓库的真实状态。
+    留给后来的人：这段默认值是手写的快照，发新版时顺手更新 tag 号即可；
+    就算忘了，JS 也会把它纠正到实际最新版，不会指向死链。
   -->
   <div class="cta hero-cta">
-    <a class="btn" id="dl" href="https://github.com/skyarea/recorder">开发中 · 看源码</a>
+    <a class="btn" id="dl" href="https://github.com/skyarea/recorder/releases/latest">下载最新版</a>
     <a class="btn ghost" href="#features">看看功能</a>
   </div>
-  <p class="meta" id="ver" aria-live="polite">还没有正式版 —— 首批构建正在做，先在源码里看进展</p>
+  <p class="meta" id="ver" aria-live="polite">最新版本 v0.0.1</p>
 
   <figure class="preview">
     <img src="app-preview.svg"
@@ -535,8 +534,9 @@ footer a{color:hsl(var(--c-accent))}
 
   <div class="band" id="download">
     <h2>下载</h2>
-    <p>做好了之后会是单文件 exe：下载、双击、跑，不写注册表也不要安装。
-       首次启动会请你选一个资料文件夹，之后每次开窗自动重扫。</p>
+    <p>单文件 exe：下载、双击、跑，不写注册表也不要安装。
+       首次启动会请你选一个资料文件夹，之后每次开窗自动重扫。
+       若提示缺 WebView2 运行库，按弹窗链接装一次即可（装过 Edge 的机器一般已自带）。</p>
     <dl class="req">
       <div><dt>系统</dt><dd>Windows 10 / 11</dd></div>
       <div><dt>安装</dt><dd>不需要 —— 单文件，不写注册表</dd></div>
@@ -548,9 +548,7 @@ footer a{color:hsl(var(--c-accent))}
 
   <div class="band quiet" id="features">
     <h2>功能</h2>
-    <p class="group-note">下面分成两组：底层那几个 Go 包已经写好并有单元测试，窗口骨架也已经能开出来
-       （里面目前只是一页占位文字）。标了色的小圆片是「写完了」的，描边的那种是「还没写」——
-       注意「写完了」不等于「能用」，这三个包目前还没有被主程序调用，要等本地服务接进来才会真正跑起来。</p>
+    <p class="group-note">以下功能都已在 v0.0.1 里能用（不是「写完等接」，是真的能点）：</p>
 
     <ul class="grid" role="list">
       <li class="feat">
@@ -565,34 +563,33 @@ footer a{color:hsl(var(--c-accent))}
         <h3>备份 / 迁移 <span class="pill done">已就绪</span></h3>
         <p>导出 JSON 备份，格式和旧版网页应用通用 —— 旧版导出的能直接导进来。</p>
       </li>
-    </ul>
-
-    <p class="group-note">界面层一项都还没有开始，下面这些都还不能用：</p>
-
-    <ul class="grid" role="list">
       <li class="feat">
-        <h3>阅读状态与进度 <span class="pill todo">还没写</span></h3>
-        <p>待读 / 在读 / 已读 / 跳过四态，翻页自动记进度，星标收藏。</p>
+        <h3>阅读状态与进度 <span class="pill done">已就绪</span></h3>
+        <p>未读 / 在读 / 已读 / 跳过四态，滚动自动记进度（节流），星标收藏。</p>
       </li>
       <li class="feat">
-        <h3>三种标注 <span class="pill todo">还没写</span></h3>
-        <p>划词高亮、自由画线、矩形框选，标注跟着页面缩放不跑位。</p>
+        <h3>三种标注 <span class="pill done">已就绪</span></h3>
+        <p>划词高亮、自由画线、矩形框选，归一化坐标跟着页面缩放不跑位，可擦除。</p>
       </li>
       <li class="feat">
-        <h3>手写笔记 <span class="pill todo">还没写</span></h3>
-        <p>笔记永远由你自己写，支持 Markdown，可以直接挂到标注上。</p>
+        <h3>手写笔记 <span class="pill done">已就绪</span></h3>
+        <p>笔记永远由你自己写，支持 Markdown，标注后就地弹框，也能在面板里挂到标注上。</p>
       </li>
       <li class="feat">
-        <h3>统计与搜索 <span class="pill todo">还没写</span></h3>
+        <h3>笔记 ↔ 标注互链 <span class="pill done">已就绪</span></h3>
+        <p>多对多关联；点笔记徽标跳回 PDF 对应位置并闪烁定位。</p>
+      </li>
+      <li class="feat">
+        <h3>统计与搜索 <span class="pill done">已就绪</span></h3>
         <p>按状态统计，全文搜索笔记内容。</p>
       </li>
       <li class="feat">
-        <h3>深色 / 浅色 <span class="pill todo">还没写</span></h3>
-        <p>打算跟随系统切换，不额外设一个开关。</p>
+        <h3>深色 / 浅色 <span class="pill done">已就绪</span></h3>
+        <p>跟随系统切换，也可手动切换并记住选择。</p>
       </li>
       <li class="feat">
-        <h3>阅读体验 <span class="pill todo">还没写</span></h3>
-        <p>打算基于 pdf.js 官方阅读器：查找、打印、缩略图、大纲、缩放都留着。</p>
+        <h3>阅读体验 <span class="pill done">已就绪</span></h3>
+        <p>基于 pdf.js 官方阅读器：查找、打印、缩略图、大纲、缩放都留着。</p>
       </li>
     </ul>
   </div>
@@ -600,7 +597,7 @@ footer a{color:hsl(var(--c-accent))}
   <div class="band" id="shortcuts">
     <h2>快捷键</h2>
     <table class="keys">
-      <caption>计划形态，界面做好之后生效。沿用参考实现的键位。</caption>
+      <caption>已生效。沿用参考实现的键位。</caption>
       <tbody>
         <tr><th scope="row"><kbd>J</kbd> / <kbd>K</kbd>（或 <kbd>↓</kbd> <kbd>↑</kbd>）</th><td>跳到列表里下一个 / 上一个文件</td></tr>
         <tr><th scope="row"><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></th><td>设为待读 / 在读 / 已读 / 跳过</td></tr>
@@ -620,7 +617,7 @@ footer a{color:hsl(var(--c-accent))}
       <dd>设计上只有一个 SQLite 文件：<code>%APPDATA%\recorder\recorder.db</code>。
          它会放在自己的应用数据目录里，不在程序旁边，所以卸载或移动程序都不会碰到它，
          你也可以直接拷走这个文件当备份。
-         提醒一句：现在还没有代码会去创建这个文件，所以你现在跑起来是看不到它的。</dd>
+         跑起来选过目录、写过进度或笔记，这个文件就会被创建出来。</dd>
 
       <dt>资料目录被挪走、或者拔了移动硬盘，会怎样？</dt>
       <dd>不会丢数据也不会崩。已经记录的进度和笔记都还在，程序会提示你重新选一个目录。
@@ -633,7 +630,7 @@ footer a{color:hsl(var(--c-accent))}
   </div>
 
   <footer>
-    <p>早期项目 —— 还没有能下载的程序。想跟着看进展的话，<a href="https://github.com/skyarea/recorder/issues">Issues</a> 是最新的地方。</p>
+    <p>早期项目 —— 已发布 v0.0.1，可在 <a href="https://github.com/skyarea/recorder/releases/latest">Releases</a> 下载。想跟着看进展或报问题，<a href="https://github.com/skyarea/recorder/issues">Issues</a> 是最新的地方。</p>
     <p>
       <a href="https://github.com/skyarea/recorder">源码</a> ·
       <a href="https://github.com/skyarea/recorder/issues">反馈问题</a> ·
