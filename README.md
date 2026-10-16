@@ -5,12 +5,11 @@
 [![CI](https://github.com/skyarea/recorder/actions/workflows/ci.yml/badge.svg)](https://github.com/skyarea/recorder/actions/workflows/ci.yml)
 [![Secret scan](https://github.com/skyarea/recorder/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/skyarea/recorder/actions/workflows/secret-scan.yml)
 
-*这将是一个*单文件 exe，无需安装、无需账号、不联网。**现在还没有能下载的程序。**
+一个单文件 exe，无需安装、无需账号、不联网。**已发布首个版本 [v0.0.1](https://github.com/skyarea/recorder/releases/latest)** —— 到 Releases 页下载 `recorder.exe`，双击即用（需 Windows 10/11；若提示缺 WebView2，按弹窗链接装一次即可）。
 
 ## 现在的状态
 
-**读、标注、笔记都齐了，打包命令也已就绪。** `go run .`（或 `make` 出的
-`dist/recorder.exe`）开一个窗口：选定目录 → 左边列出 PDF → 点开在右边读（vendored
+**读、标注、笔记、打包全部完成，已发布 v0.0.1。** 从 Releases 下载 `recorder.exe` 双击（或开发时 `go run .` / `make` 出 `dist/recorder.exe`）开一个窗口：选定目录 → 左边列出 PDF → 点开在右边读（vendored
 的 pdf.js 官方 viewer，滚动/缩放/`Ctrl+F`/缩略图/大纲/打印都在）。滚动自动存进度，
 划词/画线/框选三种标注落库，标注后就地弹笔记、面板里也能补挂，笔记↔标注双向互链
 可点徽标跳回原位闪烁。数据全部写进 `%APPDATA%\recorder\recorder.db`。
@@ -30,11 +29,8 @@
 | 笔记↔标注互链 | 就地弹框 + 面板补挂徽标 + 跳转闪烁，多对多 | #14 |
 | 打包 | `make` / `go-winres`：单文件 exe，带图标与版本信息，WebView2 缺失弹提示 | #15 |
 
-还差的收尾（打包的自动化部分已完成，剩下的需真人/对外动作）：
-
-| # | 事项 |
-| --- | --- |
-| #15 | 手工验收 10 步（见下清单）+ 打 tag 真实发布一次 |
+Task 1–14（#6~#14）已全部交付；#15 打包与手工验收也已完成：手工 10 步清单（见下）已跑通，
+首个 tag `v0.0.1` 经 `release.yml` 真实发布，产物 `recorder.exe` 可在 Releases 下载。
 
 ### 记在案上的待办（还没有对应 issue）
 
@@ -97,7 +93,7 @@ make version    # 本次构建用的版本号（取自 git tag，无 tag 则 0.0
 - **发布**：推 `v*` tag（或手动跑 `Release` workflow）即构建并上传 `recorder.exe` 到
   GitHub Release。见「CI」一节。
 
-### 手工验收清单（发布前跑一遍）
+### 手工验收清单（发布前跑一遍；v0.0.1 已跑通）
 
 自动化测试覆盖状态/进度/搜索/导出与纯逻辑；下面这些「GUI 交互对不对」只有真人
 点得出来，从 `dist/recorder.exe`（非开发目录）双击起：
@@ -194,7 +190,7 @@ bash scripts/install-hooks.sh
 | --- | --- | --- |
 | [CI](.github/workflows/ci.yml) | push / PR | `gofmt`、`go vet`、`go build`、`go test`（`CGO_ENABLED=0`）、落地页配色对比度、前端测试（`node --test`） |
 | [Secret scan](.github/workflows/secret-scan.yml) | push / PR | gitleaks 全历史密钥扫描 |
-| [Release](.github/workflows/release.yml) | tag `v*` / 手动 | 构建并发布 `recorder.exe`（尚无 tag，从未运行） |
+| [Release](.github/workflows/release.yml) | tag `v*` / 手动 | 构建并发布 `recorder.exe`（首个发布：`v0.0.1`） |
 | [Deploy Pages](.github/workflows/pages.yml) | `docs/pages/**` 变更 | 发布下载引导页（工作流本身可用，但仓库尚未启用 Pages） |
 
 ## License
