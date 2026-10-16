@@ -657,7 +657,7 @@ function renderDetail() {
     empty.style.margin = "auto";
     empty.textContent = state.scanned.length
       ? "从左侧选择一个 PDF 开始阅读"
-      : "使用方法：\n1. 点击左上角「选择目录」\n2. 左侧列出所有 PDF，点击即可阅读\n3. 右下角是笔记面板\n4. 数据保存在本地，可随时导出备份";
+      : "使用方法：\n1. 点击左上角「选择目录」\n2. 左侧列出所有 PDF，点击即可阅读\n3. 点击右侧「📝 笔记」把手打开笔记抽屉\n4. 数据保存在本地，可随时导出备份";
     el.append(empty);
     return;
   }
@@ -674,6 +674,7 @@ function renderDetail() {
   if (keepFrame) {
     el.querySelector(":scope > .reader-top")?.remove();
     el.querySelector(":scope > .notes-panel")?.remove();
+    el.querySelector(":scope > .notes-tab")?.remove();
   } else {
     el.replaceChildren();
   }
@@ -765,12 +766,56 @@ function renderDetail() {
     </div>`;
   el.append(notes);
 
+  // #25: the right-edge handle. It sits outside the drawer because a fixed
+  // parent's translateX would carry it off-screen with the drawer, and it is
+  // rebuilt with every renderDetail so its count tracks the open document.
+  const tab = document.createElement("button");
+  tab.className = "notes-tab" + (state.ui.notesOpen ? " open" : "");
+  tab.id = "notesTab";
+  tab.title = state.ui.notesOpen ? "收起笔记" : "打开笔记";
+  tab.textContent = `📝 笔记 ${r.notes.length}`;
+  el.append(tab);
+  positionNotesDrawer();
+
   renderNotes();
   renderPager();
-  wireDetail(top, notes);
+  wireDetail(top, notes, tab);
 }
 
-function wireDetail(top, notes) {
+// #25: the drawer is position:fixed, so its top must track the stacked chrome
+// above main — the topbar wraps to two lines on narrow windows and the notice
+// bar appears and disappears. Measured live, once per render and on resize.
+function positionNotesDrawer() {
+  const panel = $("#notesPanel");
+  const mainEl = document.querySelector("main");
+  if (panel && mainEl) panel.style.top = mainEl.getBoundingClientRect().top + "px";
+}
+window.addEventListener("resize", positionNotesDrawer);
+
+// #25: flipping the class first lets the drawer and its handle slide on the
+// transform transition; waiting for the slide before the refresh keeps the
+// redraw from rebuilding the drawer already in place and cutting the
+// animation short. The timeout guards a transitionend that never fires.
+async function toggleNotes() {
+  state.ui.notesOpen = !state.ui.notesOpen;
+  document.querySelector(".notes-panel")?.classList.toggle("open", state.ui.notesOpen);
+  document.querySelector(".notes-tab")?.classList.toggle("open", state.ui.notesOpen);
+  try {
+    await api("/api/ui", { notesOpen: state.ui.notesOpen });
+  } catch (e) {
+    toast("切换笔记面板失败：" + e.message);
+  }
+  const panel = $(".notes-panel");
+  if (panel) {
+    await new Promise((done) => {
+      panel.addEventListener("transitionend", done, { once: true });
+      setTimeout(done, 350);
+    });
+  }
+  await refresh();
+}
+
+function wireDetail(top, notes, tab) {
   top.addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-act]");
     if (!btn) return;
@@ -788,8 +833,7 @@ function wireDetail(top, notes) {
   notes.addEventListener("click", async (e) => {
     const bar = e.target.closest('[data-act="toggle-notes"]');
     if (bar) {
-      await api("/api/ui", { notesOpen: !state.ui.notesOpen });
-      await refresh();
+      await toggleNotes();
       return;
     }
     const btn = e.target.closest("[data-act]");
@@ -806,6 +850,7 @@ function wireDetail(top, notes) {
     else if (act === "link-ann") await linkNoteToAnnotation(btn.dataset.note, btn.dataset.id);
     else if (act === "unlink-ann") await unlinkNoteFromAnnotation(btn.dataset.note, btn.dataset.id);
   });
+  tab.addEventListener("click", () => toggleNotes());
 }
 
 async function savePage() {
